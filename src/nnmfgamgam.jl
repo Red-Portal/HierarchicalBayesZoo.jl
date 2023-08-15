@@ -16,7 +16,7 @@ function NNMFGamGam(
     α_θ::F, β_θ::F, α_β::F, β_β::F, # Hyperparameters
     y::IntMat, # Data
     K::Int, I::Int, U::Int, likeadj = one(F)
-) where {F <: Real}
+) where {F <: Real, IntMat  <: AbstractMatrix{<:Integer}}
     NNMFGamGam(α_θ, β_θ, α_β, β_β, y, K, I, U, likeadj)
 end
 
@@ -36,7 +36,7 @@ function logdensity(model::NNMFGamGam, λ_β, λ_θ)
     θ, ℓdetJ_θ = forward(b, λ_θ)
 
     p_βᵢ = Gamma(α_β, 1/β_β)
-    p_θᵢ Gamma(α_θ, 1/β_θ)
+    p_θᵢ = Gamma(α_θ, 1/β_θ)
 
     ℓp_β = sum(βᵢ -> logpdf(p_βᵢ, βᵢ), β)
     ℓp_θ = sum(θᵢ -> logpdf(p_θᵢ, θᵢ), θ)
