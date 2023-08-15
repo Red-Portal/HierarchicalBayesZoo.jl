@@ -26,3 +26,12 @@ using DrWatson
 @quickactivate "HierarchicalBayesVI"
 ```
 which auto-activate the project and enable local path handling from DrWatson.
+
+## Todo List
+- [] Dirichlet-exponential non-negative matrix factorization
+- [] Gamma-gamma non-negative matrix factorization
+- [] Probabilistic principle component analysis
+- [] Agrawal's non-conjugate Gaussian-Bernoulli matrix factorization
+- [] Gaussian mixture models
+- [] Latent Dirichlet allocation
+- [] (maybe) state space model?
