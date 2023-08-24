@@ -3,20 +3,26 @@ module HierarchicalBayesZoo
 
 export NNMFDirExp, DoublyADVI, logdensity_ref
 
-using ChainRulesCore
-using CUDA
-using Distributions
-using SimpleUnPack: @unpack
-using SpecialFunctions
+using ADTypes
+using AdvancedVI
 using Bijectors
-using StatsFuns
+using CUDA
+using ChainRulesCore
+using DiffResults
+using Distributions
+using Functors
 using LinearAlgebra
 using LogDensityProblems
 using LogExpFunctions
-using Functors
+using Random
+using SimpleUnPack: @unpack
+using SpecialFunctions
+using StatsBase
+using StatsFuns
 
 include("utils.jl")
 include("bijectors.jl")
+include("bbvi_cuda.jl")
 include("nnmfdirexp.jl")
 include("nnmfgamgam.jl")
 
