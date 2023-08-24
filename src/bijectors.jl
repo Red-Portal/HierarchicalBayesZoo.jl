@@ -21,22 +21,22 @@ function forward(b::SimplexBijector, y::Matrix{T}) where {T <: Real}
     N = size(y, 2)
     ϵ = eps(eltype(y)) 
 
-    y_off      = y .+ b.offset
-    z          = @. clamp(logistic(y_off), ϵ, 1 - ϵ)
-    zm1        = 1 .- z
+    y_off = y .+ b.offset
+    ℓz    = loglogistic.(y_off)
+    ℓzm1  = log1mexp_cuda.(ℓz)
 
     # Mimicking Tensorflow's cumprod with the "exclusive" option
-    zm1_pad        = vcat(ones(eltype(zm1), 1, N), zm1)
-    zm1_pad_cumprd = cumprod(zm1_pad, dims=1)
-    zm1_cumprd     = zm1_pad_cumprd[1:end-1,:]
+    ℓzm1_cumprd_part = cumsum(ℓzm1, dims=1)
+    ℓzm1_cumprd      = vcat(zeros(eltype(ℓzm1), 1, N), ℓzm1_cumprd_part[1:end-1,:])
 
-    x_1toKm1 = z .* zm1_cumprd 
-    x        = vcat(x_1toKm1, 1 .- sum(x_1toKm1, dims=1))
+    ℓx_1toKm1 = ℓz + ℓzm1_cumprd
+    x_1toKm1  = exp.(ℓx_1toKm1)
+    x         = vcat(x_1toKm1, 1 .- sum(x_1toKm1, dims=1))
 
     # `mapreduce` would be more efficient but it currently doesn't work
     # with the CUDA+Zygote combination of doom.
     # See https://github.com/FluxML/Zygote.jl/issues/704
-    ℓabsdetJ = sum( @. log(x_1toKm1) + log(z) - y_off )
+    ℓabsdetJ = sum( @. ℓx_1toKm1 + ℓz - y_off )
     x, ℓabsdetJ
 end
 
@@ -49,25 +49,21 @@ function forward(b::SimplexBijector, y::CuMatrix{T}) where {T <: Real}
     ϵ = eps(eltype(y)) 
 
     y_off = y .+ b.offset
-    z     = @. clamp(logistic(y_off), ϵ, 1 - ϵ)
-    zm1   = 1 .- z
+    ℓz    = loglogistic.(y_off)
+    ℓzm1  = log1mexp_cuda.(ℓz)
 
     # Cumulative product in log-pace
     # - One could use `cumprod` with padding but the ChainRule is not
     #   vectorized, so not GPU-friendly.
+    ℓzm1_cumprd_part = cumsum(ℓzm1, dims=1)
+    zeros_dev        = @ignore_derivatives CUDA.zeros(eltype(ℓzm1), 1, N)
+    ℓzm1_cumprd      = vcat(zeros_dev, ℓzm1_cumprd_part[1:end-1,:])
+    
+    ℓx_1toKm1 = ℓz + ℓzm1_cumprd
+    x_1toKm1  = exp.(ℓx_1toKm1)
+    x         = vcat(x_1toKm1, 1 .- sum(x_1toKm1, dims=1))
 
-    # - Mimicking Tensorflow's cumprod with the "exclusive" option
-    # - CUDA.ones is not automatically ignored by Zygote.
-    #   See: https://github.com/FluxML/Zygote.jl/issues/730
-    ones_dev       = @ignore_derivatives CUDA.ones(eltype(zm1), 1, N)
-    zm1_pad        = vcat(ones_dev, zm1)
-    zm1_pad_cumprd = cumprod(zm1_pad, dims=1)
-    zm1_cumprd     = zm1_pad_cumprd[1:end-1,:]
-
-    x_1toKm1 = z .* zm1_cumprd 
-    x        = vcat(x_1toKm1, 1 .- sum(x_1toKm1, dims=1))
-
-    ℓabsdetJ = sum( @. log(x_1toKm1) + log(z) - y_off )
+    ℓabsdetJ = sum( @. ℓx_1toKm1 + ℓz - y_off )
     x, ℓabsdetJ
 end
 

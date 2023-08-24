@@ -27,7 +27,7 @@ function prior_predictive_check(U, I)
     λ_β_dev = Flux.gpu(λ_β)
     λ_θ_dev = Flux.gpu(λ_θ)
 
-    model     = NNMFDirLap(α, λ₀, y, K, I, U, likeadj)
+    model     = NNMFDirExp(α, λ₀, y, K, I, U, likeadj)
     model_dev = Flux.gpu(model)
 
     @assert(
@@ -36,22 +36,13 @@ function prior_predictive_check(U, I)
     )
 
     custom_host_t = @belapsed begin
-        #logdensity($model, $λ_β, $λ_θ)
-        Zygote.gradient($λ_β) do λ_β′
-            logdensity($model, λ_β′, $λ_θ)
-        end
+        logdensity($model, $λ_β, $λ_θ)
     end
     custom_dev_t = @belapsed begin
-        #logdensity($model_dev, $λ_β_dev, $λ_θ_dev)
-        Zygote.gradient($λ_β_dev) do λ_β′
-            logdensity($model_dev, λ_β′, $λ_θ_dev)
-        end
+        logdensity($model_dev, $λ_β_dev, $λ_θ_dev)
     end
     reference_t = @belapsed begin
-        #logdensity_ref($model, $λ_β, $λ_θ)
-        Zygote.gradient($λ_β) do λ_β′
-            logdensity_ref($model, λ_β′, $λ_θ)
-        end
+        logdensity_ref($model, $λ_β, $λ_θ)
     end
     custom_host_t, custom_dev_t, reference_t
 end

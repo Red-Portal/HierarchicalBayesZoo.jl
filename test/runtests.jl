@@ -1,17 +1,18 @@
+
 using DrWatson, Test
-@quickactivate "HierarchicalBayesVI"
+@quickactivate "HierarchicalBayesZoo"
 
-# Here you include files using `srcdir`
-# include(srcdir("file.jl"))
+using Distributions
+using Random
+using Statistics
+using LinearAlgebra
+using Flux, CUDA
+using LogDensityProblems: logdensity
 
-# Run test suite
-println("Starting tests")
-ti = time()
+include(srcdir("HierarchicalBayesZoo.jl"))
 
-@testset "HierarchicalBayesVI tests" begin
-    @test 1 == 1
-end
+using .HierarchicalBayesZoo
 
-ti = time() - ti
-println("\nTest took total time of:")
-println(round(ti/60, digits = 3), " minutes")
+include("nnmfdirexp.jl")
+
+
