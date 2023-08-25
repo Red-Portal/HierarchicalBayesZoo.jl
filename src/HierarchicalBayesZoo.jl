@@ -1,14 +1,11 @@
 
 module HierarchicalBayesZoo
 
-export NNMFDirExp, DoublyADVI, logdensity_ref
+export NNMFDirExp, logdensity_ref
 
-using ADTypes
-using AdvancedVI
 using Bijectors
 using CUDA
 using ChainRulesCore
-using DiffResults
 using Distributions
 using Functors
 using LinearAlgebra
@@ -22,8 +19,16 @@ using StatsFuns
 
 include("utils.jl")
 include("bijectors.jl")
-include("bbvi_cuda.jl")
 include("nnmfdirexp.jl")
 include("nnmfgamgam.jl")
+
+using DiffResults
+using ADTypes
+using AdvancedVI
+
+export DoublyADVI
+
+
+include("bbvi/advicuda.jl")
 
 end
