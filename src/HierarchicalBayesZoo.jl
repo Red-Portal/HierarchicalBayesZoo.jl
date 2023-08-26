@@ -22,13 +22,17 @@ include("bijectors.jl")
 include("nnmfdirexp.jl")
 include("nnmfgamgam.jl")
 
+using Accessors
 using DiffResults
 using ADTypes
 using AdvancedVI
 
-export DoublyADVI
+amortize(q, x) = q
 
+export ADVICUDA, Subsampling
 
 include("bbvi/advicuda.jl")
+include("bbvi/subsample.jl")
+include("bbvi/locscale.jl")
 
 end

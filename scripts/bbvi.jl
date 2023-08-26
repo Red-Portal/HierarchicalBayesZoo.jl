@@ -26,8 +26,8 @@ using HierarchicalBayesZoo
 struct BlockGaussians{M <: AbstractVector,
                       S <: AbstractVector,
                       I <: AbstractVector{<:Integer}}
-    μs::Vector{M}
-    Σs::Vector{S}
+    μs       ::Vector{M}
+    Σs       ::Vector{S}
     block_idx::Vector{I}
     batch_idx::Vector{Int}
 end
@@ -78,24 +78,18 @@ function main()
     n_blocks  = 5
     blocksize = 1000
 
-    prob, block_idx = RandomBlockGaussians(rng, n_blocks, blocksize, use_cuda)
-
     update_batch = (prob, batch) -> begin
         @set prob.batch_idx = collect(batch)
     end
-    amortize = (q, batch) -> q
 
     batchsize    = 1 #n_blocks
     n_samples    = 10
     data_indices = 1:n_blocks
-    
-    obj = DoublyADVI(prob,
-                     n_samples;
-                     batchsize    = batchsize,
-                     update_batch = update_batch,
-                     amortize     = amortize,
-                     data_indices = data_indices,
-                     use_cuda     = use_cuda)
+
+    prob, block_idx = RandomBlockGaussians(rng, n_blocks, blocksize, use_cuda)
+
+    advi       = ADVICUDA(prob, n_samples, use_cuda)
+    advidoubly = Subsampling(advi, batchsize, update_batch, data_indices)
 
     d    = LogDensityProblems.dimension(prob)
     μ, L = if use_cuda
@@ -121,9 +115,9 @@ function main()
         (wass2 = sqrt(Δμ² + ΔΣ²),)
     end
     
-    n_max_iter = 10^3
+    n_max_iter = 10^4
     q, stats, _ = optimize(
-        obj,
+        advidoubly,
         q,
         n_max_iter;
         callback! = callback!,
