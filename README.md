@@ -29,14 +29,14 @@ using DrWatson
 which auto-activate the project and enable local path handling from DrWatson.
 
 ## Todo List
-- [] Deep exponential families (Ranganath, *et al.*, 2015)
+- [ ] Deep exponential families (Ranganath, *et al.*, 2015)
 - [x] Dirichlet-exponential non-negative matrix factorization (Kucukelbir, *et al.*, 2017)
-- [] Gamma-gamma non-negative matrix factorization (Canny, 2004; Gopalan, *et al.*, 2015)
-- [] Probabilistic principle component analysis (Tipping & Bishop, 1999)
-- [] Non-conjugate Gaussian-Bernoulli matrix factorization (Agrawal, *et al.*, 2021)
-- [] Gaussian mixture models
-- [] Latent Dirichlet allocation
-- [] (maybe) state space model?
+- [ ] Gamma-gamma non-negative matrix factorization (Canny, 2004; Gopalan, *et al.*, 2015)
+- [ ] Probabilistic principle component analysis (Tipping & Bishop, 1999)
+- [ ] Non-conjugate Gaussian-Bernoulli matrix factorization (Agrawal, *et al.*, 2021)
+- [ ] Difference correlated random walk model (Jonsen, *et al.*, 2013;  Auger‐Méthé, *et al.*, 2021)
+- [ ] Stochastic volatility
+- [ ] Bayesian regression with measurement error?
 
 ## References
 - Agrawal, A., & Domke, J. (2021). Amortized variational inference for simple hierarchical models. Advances in Neural Information Processing Systems, 34, 21388-21399.
@@ -45,3 +45,5 @@ which auto-activate the project and enable local path handling from DrWatson.
 - Kucukelbir, A., Tran, D., Ranganath, R., Gelman, A., & Blei, D. M. (2017). Automatic differentiation variational inference. Journal of machine learning research.
 - Ranganath, R., Tang, L., Charlin, L., & Blei, D. (2015, February). Deep exponential families. In Artificial Intelligence and Statistics (pp. 762-771). PMLR.
 - Tipping, M. E., & Bishop, C. M. (1999). Probabilistic principal component analysis. Journal of the Royal Statistical Society Series B: Statistical Methodology, 61(3), 611-622.
+- Jonsen, I. D., Basson, M., Bestley, S., Bravington, M. V., Patterson, T. A., Pedersen, M. W., ... & Wotherspoon, S. J. (2013). State-space models for bio-loggers: A methodological road map. Deep Sea Research Part II: Topical Studies in Oceanography, 88, 34-46.
+- Auger‐Méthé, Marie, Ken Newman, Diana Cole, Fanny Empacher, Rowenna Gryba, Aaron A. King, Vianey Leos‐Barajas et al. "A guide to state–space modeling of ecological time series." Ecological Monographs 91, no. 4 (2021): e01470.
