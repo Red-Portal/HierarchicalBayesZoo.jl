@@ -27,17 +27,10 @@ function AdvancedVI.init(rng::Random.AbstractRNG, advi::ADVICUDA, λ, re)
 end
 
 function (advi::ADVICUDA)(
-    rng        ::Random.AbstractRNG,
-    prob_batch,
-    q          ::VILocationScale,
+    rng::Random.AbstractRNG, prob_batch, q,
 )
-    @unpack  location, scale = q
-
-    n_dims    = length(location)
     n_samples = advi.n_samples
-
-    us = randn(rng, eltype(q), n_dims, n_samples)
-    ηs = scale*us .+ location
+    ηs        = rand(rng, q, n_samples)
     𝔼ℓ = sum(eachcol(ηs)) do ηᵢ
         LogDensityProblems.logdensity(prob_batch, ηᵢ)
     end / n_samples

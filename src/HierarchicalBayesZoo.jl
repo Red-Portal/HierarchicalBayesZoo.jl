@@ -26,13 +26,20 @@ using Accessors
 using DiffResults
 using ADTypes
 using AdvancedVI
+using LinearAlgebra: AbstractTriangular
 
 amortize(q, x) = q
 
-export ADVICUDA, Subsampling
+export
+    ADVICUDA,
+    amortize,
+    Subsampling,
+    IsoStructuredLocationScale,
+    StructuredLocationScale
 
 include("bbvi/advicuda.jl")
 include("bbvi/subsample.jl")
 include("bbvi/locscale.jl")
+include("bbvi/structured.jl")
 
 end

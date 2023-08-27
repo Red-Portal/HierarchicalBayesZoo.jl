@@ -23,17 +23,23 @@ using StatsFuns
 using AdvancedVI
 using HierarchicalBayesZoo
 
-struct BlockGaussians{M <: AbstractVector,
-                      S <: AbstractVector,
-                      I <: AbstractVector{<:Integer}}
-    μs       ::Vector{M}
-    Σs       ::Vector{S}
+struct BlockGaussians{
+    V <: AbstractVector{<:Real},
+    I <: AbstractVector{<:Integer},
+}
+    μ        ::V
+    Σ        ::V
+    μs       ::Vector{V}
+    Σs       ::Vector{V}
     block_idx::Vector{I}
     batch_idx::Vector{Int}
 end
 
 function RandomBlockGaussians(rng_host, n_blocks, blocksize, use_cuda)
     rng = use_cuda ? CUDA.default_rng() : rng_host
+
+    μ = randn(rng, Float32, blocksize)
+    Σ = Flux.softplus.(randn(rng, Float32, blocksize))
 
     μs = map(1:n_blocks) do _
         randn(rng, Float32, blocksize)
@@ -47,17 +53,23 @@ function RandomBlockGaussians(rng_host, n_blocks, blocksize, use_cuda)
     else
         map(collect, partition(data_idx, blocksize)) 
     end
-    BlockGaussians(μs, Σs, block_idx, collect(1:n_blocks)), block_idx
+    BlockGaussians(
+        μ, Σ, μs, Σs, block_idx, collect(1:n_blocks)
+    ), block_idx
 end
 
 function LogDensityProblems.logdensity(model::BlockGaussians, θ)
-    @unpack μs, Σs, block_idx, batch_idx = model
+    @unpack μ, Σ, μs, Σs, block_idx, batch_idx = model
     N = length(block_idx)
     M = length(batch_idx)
+    d = length(first(μs))
 
-    N/M*sum(batch_idx) do idx
-        logpdf(TuringDiagMvNormal(μs[idx], sqrt.(Σs[idx])), θ[block_idx[idx]])
+    ℓprior = logpdf(TuringDiagMvNormal(μ, sqrt.(Σ)), θ[1:d])
+    ℓlike  = N/M*sum(enumerate(batch_idx)) do (θ_idx, p_idx)
+        idx_range = θ_idx*d+1:(θ_idx+1)*d
+        logpdf(TuringDiagMvNormal(μs[p_idx], sqrt.(Σs[p_idx])), θ[idx_range])
     end
+    ℓprior + ℓlike
 end
 
 function LogDensityProblems.dimension(model::BlockGaussians)
@@ -75,14 +87,14 @@ function main()
     CUDA.allowscalar(false)
 
     use_cuda  = true
-    n_blocks  = 5
+    n_blocks  = 10
     blocksize = 1000
 
     update_batch = (prob, batch) -> begin
         @set prob.batch_idx = collect(batch)
     end
 
-    batchsize    = 1 #n_blocks
+    batchsize    = 5 #n_blocks
     n_samples    = 10
     data_indices = 1:n_blocks
 
@@ -91,28 +103,42 @@ function main()
     advi       = ADVICUDA(prob, n_samples, use_cuda)
     advidoubly = Subsampling(advi, batchsize, update_batch, data_indices)
 
-    d    = LogDensityProblems.dimension(prob)
-    μ, L = if use_cuda
-        CUDA.zeros(Float32, d), Diagonal(CUDA.ones(Float32, d))
+    q = if use_cuda
+        IsoStructuredLocationScale(
+            CUDA.zeros(Float32, blocksize), CUDA.zeros(Float32, blocksize), 1f0, n_blocks
+        )
     else
-        zeros(Float32, d), Diagonal(ones(Float32, d))
+        IsoStructuredLocationScale(
+            zeros(Float32, blocksize), zeros(Float32, blocksize), 1f0, n_blocks
+        )
     end
-    q = VIMeanFieldGaussian(μ, L)
+
+    λ, re = Optimisers.destructure(q)
 
     callback!(; stat, restructure, λ, g) = begin
         @assert eltype(λ) == Float32
         @assert eltype(g) == Float32
         q   = restructure(λ)
-        μ   = mean(q)
-        Σ   = var(q)
 
-        Δμ² = sum(1:n_blocks) do idx
-            sum(abs2, prob.μs[idx] - μ[block_idx[idx]])
+        Δμ²_loc = sum(1:n_blocks) do idx
+            μᵢ = q.m_locals[idx]
+            sum(abs2, prob.μs[idx] - μᵢ)
         end
-        ΔΣ² = sum(1:n_blocks) do idx
-            sum(abs2, prob.Σs[idx] - diag(Σ)[block_idx[idx]])
+
+        Δμ²_glo = begin
+            μ = q.m_global
+            sum(abs2, prob.μ - μ)
         end
-        (wass2 = sqrt(Δμ² + ΔΣ²),)
+
+        Δμ² = Δμ²_glo + Δμ²_loc
+
+        # ΔΣ² = sum(1:n_blocks) do idx
+        #     qᵢ = amortize(q, [idx])
+        #     Σᵢ = cov(qᵢ)
+        #     sum(abs2, Diagonal(prob.Σs[idx]) - Σᵢ)
+        # end
+        #(wass2 = sqrt(Δμ² + ΔΣ²),)
+        (wass2 = sqrt(Δμ²),)
     end
     
     n_max_iter = 10^4
@@ -126,4 +152,5 @@ function main()
         optimizer = Optimisers.Adam(1f-3)
     )
     plot!([stat.wass2 for stat ∈ stats])
+    #plot!([stat.elbo for stat ∈ stats])
 end
