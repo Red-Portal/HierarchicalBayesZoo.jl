@@ -49,7 +49,7 @@ function AdvancedVI.estimate_gradient(
     batch_idx = nothing
 )
     f(λ′) = begin
-        q_η_x = amortize(restructure(λ′), batch_idx)
+        q_η_x = amortize(advi.prob, restructure(λ′), batch_idx)
         -advi(rng_mc, advi.prob, q_η_x)
     end
     AdvancedVI.value_and_gradient!(adbackend, f, λ, out)

@@ -67,6 +67,7 @@ function IsoStructuredLocationScale(
 end
 
 function amortize(
+    prob,
     q    ::StructuredLocationScale,
     batch::AbstractVector{<:Integer}
 )
@@ -87,5 +88,5 @@ function Distributions.rand(
         us_local = randn(rng, eltype(m_global), d_local, n_samples)
         (B_locals[i]*us_global + D_locals[i]*us_local) .+ m_locals[i]
     end
-    vcat(zs_global, zs_locals...)
+    vcat(zs_locals..., zs_global)
 end

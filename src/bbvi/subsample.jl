@@ -1,13 +1,11 @@
 
 struct Subsampling{
     O         <: AdvancedVI.AbstractVariationalObjective,
-    UP,
     VectorInt <: AbstractVector{<:Integer}
 } <: AdvancedVI.AbstractVariationalObjective
-    objective      ::O
-    batchsize      ::Int
-    update_problem ::UP
-    data_indices   ::VectorInt
+    objective   ::O
+    batchsize   ::Int
+    data_indices::VectorInt
 end
 
 function init_batch(
@@ -49,12 +47,12 @@ function AdvancedVI.estimate_gradient(
     re,
     out    ::DiffResults.MutableDiffResult
 )
-    @unpack objective, update_problem = sub
+    objective = sub.objective
 
     sub_state, obj_state = state
     batch, sub_state′, sub_logstat = update_subsampling(rng, sub, sub_state)
 
-    prob_sub = update_problem(objective.prob, batch)
+    prob_sub = subsample_problem(objective.prob, batch)
     obj_sub  = @set objective.prob = prob_sub
 
     out, obj_state′, obj_logstat = AdvancedVI.estimate_gradient(

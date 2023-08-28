@@ -23,19 +23,19 @@ end
 
 @functor NNMFDirExp
 
-function logdensity(model::NNMFDirExp, λ_β, λ_θ)
-    # λ_θ ∈ ℝ^{(K-1) × U}
-    # λ_β ∈ ℝ^{I × K}
+function logdensity(model::NNMFDirExp, z_β, z_θ)
+    # z_θ ∈ ℝ^{(K-1) × U}
+    # z_β ∈ ℝ^{I × K}
     #
     # θ ∈ S^{K × U}
     # β ∈ ℝ₊^{I × K}
 
     @unpack α, λ₀, y, K, I, U, b_β, b_θ, likeadj = model
-    @assert size(λ_β) == (I, K)
-    @assert size(λ_θ) == ((K-1), U)
+    @assert size(z_β) == (I, K)
+    @assert size(z_θ) == ((K-1), U)
 
-    β, ℓdetJ_β = forward(b_β, λ_β)
-    θ, ℓdetJ_θ = forward(b_θ, λ_θ)
+    β, ℓdetJ_β = forward(b_β, z_β)
+    θ, ℓdetJ_θ = forward(b_θ, z_θ)
 
     ℓp_β = sum(βᵢ -> logpdf(Exponential(λ₀), βᵢ), β)
 
@@ -63,9 +63,9 @@ end
 function LogDensityProblems.logdensity(model::NNMFDirExp, λ_flat)
     @unpack K, I, U = model
     @assert length(λ_flat) == K*I + (K-1)*U
-    λ_β = reshape(first(λ_flat,     I*K), (  I, K))
-    λ_θ = reshape(last( λ_flat, (K-1)*U), (K-1, U))
-    logdensity(model, λ_β, λ_θ)
+    z_β = reshape(first(λ_flat,     I*K), (  I, K))
+    z_θ = reshape(last( λ_flat, (K-1)*U), (K-1, U))
+    logdensity(model, z_β, z_θ)
 end
 
 function logdensity_ref(model::NNMFDirExp, λ_β, λ_θ)

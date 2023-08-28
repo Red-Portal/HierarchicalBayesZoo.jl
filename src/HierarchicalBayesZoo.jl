@@ -19,6 +19,7 @@ using StatsFuns
 
 include("utils.jl")
 include("bijectors.jl")
+include("volatility.jl")
 include("nnmfdirexp.jl")
 include("nnmfgamgam.jl")
 
@@ -28,7 +29,7 @@ using ADTypes
 using AdvancedVI
 using LinearAlgebra: AbstractTriangular
 
-amortize(q, x) = q
+amortize(prob, q, batch) = q
 
 export
     ADVICUDA,
