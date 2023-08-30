@@ -64,11 +64,11 @@ function LogDensityProblems.logdensity(model::BlockGaussians, θ)
     M = length(batch_idx)
     d = length(first(μs))
 
-    ℓprior = logpdf(TuringDiagMvNormal(μ, sqrt.(Σ)), θ[1:d])
     ℓlike  = N/M*sum(enumerate(batch_idx)) do (θ_idx, p_idx)
-        idx_range = θ_idx*d+1:(θ_idx+1)*d
+        idx_range = (θ_idx-1)*d+1:θ_idx*d
         logpdf(TuringDiagMvNormal(μs[p_idx], sqrt.(Σs[p_idx])), θ[idx_range])
     end
+    ℓprior = logpdf(TuringDiagMvNormal(μ, sqrt.(Σ)), θ[end-d+1:end])
     ℓprior + ℓlike
 end
 
@@ -80,6 +80,10 @@ function LogDensityProblems.capabilities(::Type{<:BlockGaussians})
     LogDensityProblems.LogDensityOrder{0}()
 end
 
+function HierarchicalBayesZoo.subsample_problem(model::BlockGaussians, batch)
+    @set model.batch_idx = collect(batch)
+end
+
 function main()
     seed = (0x38bef07cf9cc549d, 0x49e2430080b3f797)
     rng  = Philox4x(UInt64, seed, 8)
@@ -88,20 +92,16 @@ function main()
 
     use_cuda  = true
     n_blocks  = 10
-    blocksize = 1000
+    blocksize = 100
 
-    update_batch = (prob, batch) -> begin
-        @set prob.batch_idx = collect(batch)
-    end
-
-    batchsize    = 5 #n_blocks
+    batchsize    = 1 #n_blocks
     n_samples    = 10
     data_indices = 1:n_blocks
 
     prob, block_idx = RandomBlockGaussians(rng, n_blocks, blocksize, use_cuda)
 
     advi       = ADVICUDA(prob, n_samples, use_cuda)
-    advidoubly = Subsampling(advi, batchsize, update_batch, data_indices)
+    advidoubly = Subsampling(advi, batchsize, data_indices)
 
     q = if use_cuda
         IsoStructuredLocationScale(

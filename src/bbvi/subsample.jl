@@ -1,32 +1,33 @@
 
 struct Subsampling{
-    O         <: AdvancedVI.AbstractVariationalObjective,
-    VectorInt <: AbstractVector{<:Integer}
+    O <: AdvancedVI.AbstractVariationalObjective,
+    B <: Integer,
+    D <: AbstractVector,
 } <: AdvancedVI.AbstractVariationalObjective
-    objective   ::O
-    batchsize   ::Int
-    data_indices::VectorInt
+    objective::O
+    batchsize::B
+    data     ::D
 end
 
 function init_batch(
     rng      ::Random.AbstractRNG,
-    indices  ::AbstractVector{<:Integer},
-    batchsize::Int
+    data     ::AbstractVector,
+    batchsize::Integer
 )
-    shuffled = Random.shuffle(rng, indices)
+    shuffled = Random.shuffle(rng, data)
     batches  = Iterators.partition(shuffled, batchsize)
     enumerate(batches)
 end
 
 function AdvancedVI.init(rng::Random.AbstractRNG, sub::Subsampling, λ, re)
-    @unpack objective, batchsize, data_indices = sub
+    @unpack objective, batchsize, data = sub
     epoch     = 1
-    sub_state = (epoch, init_batch(rng, data_indices, batchsize))
+    sub_state = (epoch, init_batch(rng, data, batchsize))
     obj_state = AdvancedVI.init(rng, objective, λ, re)
     (sub_state, obj_state)
 end
 
-function update_subsampling(rng, sub::Subsampling, sub_state)
+function update_subsampling(rng::Random.AbstractRNG, sub::Subsampling, sub_state)
     epoch, batch_itr         = sub_state
     (step, batch), batch_itr′ = Iterators.peel(batch_itr)
     epoch′, batch_itr′′        = if isempty(batch_itr′)
@@ -34,8 +35,8 @@ function update_subsampling(rng, sub::Subsampling, sub_state)
     else
         epoch, batch_itr′
     end
-    stat = (epoch = epoch, step = step)
-    batch, (epoch′, batch_itr′′), stat
+    logstat = (epoch = epoch, step = step)
+    batch, (epoch′, batch_itr′′), logstat
 end
 
 function AdvancedVI.estimate_gradient(
@@ -52,11 +53,13 @@ function AdvancedVI.estimate_gradient(
     sub_state, obj_state = state
     batch, sub_state′, sub_logstat = update_subsampling(rng, sub, sub_state)
 
-    prob_sub = subsample_problem(objective.prob, batch)
-    obj_sub  = @set objective.prob = prob_sub
+    q_full            = re(λ)
+    prob_sub, q_amort = subsample_problem(objective.prob, q_full, batch)
+    obj_sub           = @set objective.prob = prob_sub
+    λ_amort, re_amort = Optimisers.destructure(q_amort)
 
     out, obj_state′, obj_logstat = AdvancedVI.estimate_gradient(
-        rng, ad, obj_sub, obj_state, λ, re, out, batch
+        rng, ad, obj_sub, obj_state, λ_amort, re_amort, out, batch
     )
     out, (sub_state′, obj_state′), merge(sub_logstat, obj_logstat)
 end

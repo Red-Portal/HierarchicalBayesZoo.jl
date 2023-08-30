@@ -2,11 +2,11 @@
 function StatsBase.entropy(q::VILocationScale{L, <:Diagonal, D}) where {L, D}
     @unpack  location, scale, dist = q
     n_dims = length(location)
-    n_dims*convert(eltype(location), entropy(dist)) + sum(log, diag(scale))
+    n_dims*convert(eltype(location), entropy(dist)) + sum(x -> log(abs(x)), diag(scale))
 end
 
 struct AmortizedLocationScale{
-    VLS <: VILocationScale,
+    VLS    <: VILocationScale,
     VecInt <: AbstractVector{<:Integer}
 }
     q             ::VLS
@@ -14,6 +14,8 @@ struct AmortizedLocationScale{
     n_dims_local  ::Int
     amortize_index::VecInt
 end
+
+@functor AmortizedLocationScale (q,)
 
 function amortize(
     prob,
@@ -24,22 +26,22 @@ function amortize(
     AmortizedLocationScale(q, n_dims_global, n_dims_local, batch)
 end
 
-function StatsBase.entropy(q_x::AmortizedLocationScale) where {L, D}
+function StatsBase.entropy(q_x::AmortizedLocationScale)
     entropy(q_x.q)
 end
 
 function Distributions.rand(
-    rng      ::AbstractRNG,
-    q_x      ::AmortizedLocationScale{VILocationScale{L, <:Diagonal, D}},
+    rng      ::Random.AbstractRNG,
+    q_x      ::AmortizedLocationScale{<:VILocationScale{L, <:Diagonal, D}},
     n_samples::Integer
-)
+) where {L, D}
     @unpack n_dims_global, n_dims_local, amortize_index = q_x
     zs = rand(rng, q_x.q, n_samples)
 
-    z_global  = zs[1:n_n_dims_global, :]
+    z_global  = zs[1:n_dims_global, :]
     z_locals  = map(amortize_index) do i
-        begin_idx = n_dims_global + (i-1)*n_locals + 1
-        end_idx   = n_dims_global + i*n_locals
+        begin_idx = n_dims_global + (i-1)*n_dims_local + 1
+        end_idx   = n_dims_global + i*n_dims_local
         zs[begin_idx:end_idx,:]
     end
 

@@ -75,7 +75,10 @@ function amortize(
 end
 
 function Distributions.rand(
-    rng::AbstractRNG, q::StructuredLocationScale, n_samples::Integer)
+    rng      ::Random.AbstractRNG,
+    q        ::StructuredLocationScale,
+    n_samples::Integer
+)
     @unpack m_locals, m_global, D_global, D_locals, B_locals, amortize_index = q
 
     d_global = length(m_global)
