@@ -7,6 +7,7 @@ struct Volatility{
     x           ::Mat
     recon_params::Re
     likeadj     ::F
+    b⁻¹_Σ       ::CorrCholBijector
 
     #global_idxs     ::Vector{Int}
     #local_block_idxs::Vector{Vector{Int}}
@@ -82,11 +83,11 @@ function Volatility(; use_cuda = false, blocksize::Integer = 128)
     )
     _, re = Optimisers.destructure(θ)
 
-    Volatility(x, re, 1f0)
+    Volatility(x, re, 1f0, CorrCholBijector(d))
 end
 
 function StructuredLocationScale(
-    prob::Volatility; use_cuda=false, diagband=false
+    prob::Volatility; use_cuda=false
 )
     x = prob.x
     d = size(x, 1)
@@ -97,7 +98,7 @@ function StructuredLocationScale(
 
     σ_init = sqrt(.1f0)
     IsoStructuredLocationScale(
-        d_global, d_local, n, σ_init; use_cuda, diagband
+        d_global, d_local, n, σ_init; use_cuda
     )
 end
 
@@ -137,7 +138,7 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
     #
     # yₜ ~ N(μ + Φ*(yₜ₋₁ - μ), Q)
     # xₜ ~ N(0, exp(yₜ/2))
-    @unpack x, likeadj = model
+    @unpack x, likeadj, b⁻¹_Σ = model
     @unpack y, μ, η_ϕ, η_τ, η_L_Σ = param
 
     d = size(x,1)
@@ -153,15 +154,14 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
     @assert d == size(x,1)
     @assert size(yₜ,2) == size(yₜ₋₁,2)+1
 
-    b⁻¹_Σ = Bijectors.VecCholeskyBijector(:L) |> inverse
     b⁻¹_τ = bijector(Exponential())           |> inverse
     b⁻¹_ϕ = bijector(Uniform{F}(-1, 1))       |> inverse
 
-    L_Σ_chol, logabsJ_Σ = with_logabsdet_jacobian(b⁻¹_Σ, Flux.cpu(η_L_Σ))
+    L_Σ_chol, logabsJ_Σ = forward(b⁻¹_Σ, Flux.cpu(η_L_Σ))
     τ,        logabsJ_τ = with_logabsdet_jacobian(b⁻¹_τ, Flux.cpu(η_τ))
     ϕ,        logabsJ_ϕ = with_logabsdet_jacobian(b⁻¹_ϕ, η_ϕ)
 
-    L⁻¹_Q_cpu   = inv(L_Σ_chol.L) ./ τ
+    L⁻¹_Q_cpu   = inv(L_Σ_chol) ./ τ
     L⁻¹_Q_dense = if η_L_Σ isa CuArray
         Flux.gpu(L⁻¹_Q_cpu)
     else
@@ -173,7 +173,7 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
         LowerTriangular(L⁻¹_Q_dense)
     end
 
-    ℓp_Q = logpdf(LKJCholesky(d, 1), L_Σ_chol)
+    ℓp_Q = logpdf(LKJCholesky(d, 1), Cholesky(L_Σ_chol))
     ℓp_μ = sum(Base.Fix1(logpdf, Cauchy{F}( 0, 10)), μ)
     ℓp_ϕ = sum(Base.Fix1(logpdf, Uniform{F}(-1, 1)), ϕ)
     ℓp_τ = sum(Base.Fix1(logpdf, truncated(Cauchy{F}(0, 5), zero(F), nothing)), τ)

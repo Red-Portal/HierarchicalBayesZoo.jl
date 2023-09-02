@@ -97,10 +97,10 @@ function _vectotril(
     L
 end
 
-@adjoint function (vectotril::VecToTril)(x::AbstractVector)
-    @unpack d, chol_idx = vectotril
-    L = _vectotril(d, chol_idx, x)
-    L, Δ -> (nothing, reshape(Δ[chol_idx], length(x)),)
+function _triltovec(
+    chol_idx::AbstractVector{<:Integer}, y::AbstractMatrix
+)
+    y[chol_idx]
 end
 
 function (vectotril::VecToTril)(x::AbstractVector)
@@ -108,25 +108,45 @@ function (vectotril::VecToTril)(x::AbstractVector)
     _vectotril(d, chol_idx, x)
 end
 
-struct CorrCholBijector{VecInt <: AbstractVector{<:Integer}}
-    vectostricttril::VecToTril{VecInt}
+@adjoint function (vectotril::VecToTril)(x::AbstractVector)
+    @unpack d, chol_idx = vectotril
+    L = _vectotril(d, chol_idx, x)
+    L, Δ -> (nothing, reshape(Δ[chol_idx], length(x)),)
 end
 
+function triltovec(vectotril::VecToTril, x::AbstractMatrix)
+    @unpack d, chol_idx = vectotril
+    _triltovec(chol_idx, x)
+end
+
+@adjoint function triltovec(vectotril::VecToTril, y::AbstractMatrix)
+    @unpack d, chol_idx = vectotril
+    x = _triltovec(chol_idx, y)
+    x, Δ -> (nothing, vectotril(Δ),)
+end
+
+struct CorrCholBijector{VecInt <: AbstractVector{<:Integer}}
+    vectotril1::VecToTril{VecInt}
+    vectotril2::VecToTril{VecInt}
+end
+
+@functor CorrCholBijector
+
 function CorrCholBijector(d::Int)
-    CorrCholBijector(VecToTril(d, -1))
+    CorrCholBijector(VecToTril(d, -1), VecToTril(d, -2))
 end
 
 function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
-    vectotril = b.vectostricttril
+    @unpack vectotril1, vectotril2 = b
 
     ϵ         = eps(eltype(y))
     t         = @. clamp(tanh(y), -1 + ϵ, 1 - ϵ)
-    r         = vectotril(t)
+    r         = vectotril1(t)
     ℓsqrt1mr² = @. log(1 - r*r)/2
 
     # Cumulative product in log-pace
-    ℓsqrt1mr²_cumprd    = cumsum(ℓsqrt1mr², dims=2)
-    sqrt1mr²_cumprd     = exp.(ℓsqrt1mr²_cumprd)
+    ℓsqrt1mr²_cumprd = cumsum(ℓsqrt1mr², dims=2)
+    sqrt1mr²_cumprd  = exp.(ℓsqrt1mr²_cumprd)
 
     pad = @ignore_derivatives if y isa CuArray
         CUDA.ones(eltype(y), size(sqrt1mr²_cumprd,1))
@@ -134,8 +154,15 @@ function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
         ones(eltype(y), size(sqrt1mr²_cumprd,1))
     end
     sqrt1mr²_cumprd_pad = hcat(pad, sqrt1mr²_cumprd[:,1:end-1])
-    L = ((r + I).*sqrt1mr²_cumprd_pad) |> LowerTriangular
+    L_dense = ((r + I).*sqrt1mr²_cumprd_pad)
+    L       = LowerTriangular(L_dense)
     
-    z1m_cumprod = 1 .- cumsum(L.*L, -1)
+    z1m_cumprod           = 1 .- cumsum(L_dense.*L_dense, dims=2)
+    z1m_cumprod_tril      = triltovec(vectotril2, z1m_cumprod)
+    stick_breaking_logdet = 0.5*sum(@. log(abs(z1m_cumprod_tril)))
+    log2                  = log(2*one(eltype(y)))
+    tanh_logdet           = -2*sum(@. y + StatsFuns.softplus(-2*y) - log2)
+    logjacabsdet          = stick_breaking_logdet + tanh_logdet
+    L, logjacabsdet
 end
 

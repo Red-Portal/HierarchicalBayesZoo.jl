@@ -4,7 +4,6 @@ struct StructuredLocationScale{
     VecBatch      <: AbstractMatrix,
     Mat           <: AbstractMatrix,
     MatBatch      <: AbstractArray,
-    MaybeMatBatch <: Union{<:AbstractArray,Nothing},
     MatInt        <: AbstractMatrix{<:Integer},
     VecInt        <: AbstractVector{<:Integer}
 }
@@ -13,13 +12,12 @@ struct StructuredLocationScale{
     diagonal_z::Mat
     diagonal_y::MatBatch
     border    ::MatBatch
-    diagband_y::MaybeMatBatch
     diag_idx  ::MatInt
     triu_idx  ::MatInt
     batch_idx ::VecInt
 end
 
-@functor StructuredLocationScale (location_z, location_y, diagonal_z, diagonal_y, border, diagband_y)
+@functor StructuredLocationScale (location_z, location_y, diagonal_z, diagonal_y, border)
 
 function StatsBase.entropy(q::StructuredLocationScale)
     @unpack diagonal_z, diagonal_y, diag_idx = q
@@ -39,7 +37,6 @@ function IsoStructuredLocationScale(
     d_y     ::Int,
     n       ::Int,
     isoscale::F;
-    diagband = false,
     use_cuda = false
 ) where {F<:Real}
     m_z  = use_cuda ? CUDA.zeros(F, d_z)         : zeros(F, d_z)
@@ -47,11 +44,6 @@ function IsoStructuredLocationScale(
     B    = use_cuda ? CUDA.zeros(F, d_y, n, d_z) : zeros(F, d_y, n, d_z)
     D_z  = use_cuda ? CUDA.zeros(F, d_z, d_z)    : zeros(F, d_z, d_z)
     D_y  = use_cuda ? CUDA.zeros(F, d_y, d_y, n) : zeros(F, d_y, d_y, n)
-    DB_y = if diagband
-          use_cuda ? CUDA.zeros(F, d_y, d_y, n-1) : zeros(F, d_y, d_y, n-1)
-    else
-        nothing
-    end
 
     D_z[diagind(D_z)] .= isoscale
 
@@ -75,8 +67,7 @@ function IsoStructuredLocationScale(
     batch_idx     = use_cuda ? Flux.gpu(batch_idx_cpu) : batch_idx_cpu
 
     StructuredLocationScale(
-        m_z, m_y, D_z, D_y, B, DB_y,
-        diag_idx_block, block_triu_idx, batch_idx
+        m_z, m_y, D_z, D_y, B, diag_idx_block, block_triu_idx, batch_idx
     )
 end
 
@@ -105,7 +96,7 @@ function Distributions.rand(
     q        ::StructuredLocationScale,
     n_samples::Integer
 )
-    @unpack location_z, location_y, diagonal_z, diagonal_y, border, diagband_y, triu_idx, batch_idx = q
+    @unpack location_z, location_y, diagonal_z, diagonal_y, border, triu_idx, batch_idx = q
 
     batchsize = length(batch_idx)
 
@@ -124,25 +115,10 @@ function Distributions.rand(
     triu_idx_batch = reshape(triu_idx[:,1:batchsize],:)
     D_y_batch_tril = tril_batch(D_y_batch, triu_idx_batch)
 
-    display(typeof(D_y_batch_tril))
-
     Du_batch_perm = NNlib.batched_mul(D_y_batch_tril, u_y_batch)
     Du_batch      = reshape(permutedims(Du_batch_perm, (1, 3, 2)), (d_y*batchsize, n_samples))
 
-    DupDBu_batch = if !isnothing(diagband_y)
-        # In principle, I should also subsample diagband_y but it's not used in any
-        # of the subsampled problems. So I'm gonna shamelessly ignore that step.
-        DB_y_batch     = reshape(diagband_y, (d_y, d_y, n-1))
-        DBu_batch_perm = NNlib.batched_mul(DB_y_batch, u_y_batch[:,:,1:end-1])
-        DBu_batch      = reshape(permutedims(DBu_batch_perm, (1, 3, 2)), (d_y*(n-1), n_samples))
-        y₁_zeros_pad   = @ignore_derivatives DBu_batch isa CuArray ? CUDA.zeros(eltype(DBu_batch), d_y, n_samples) : zeros(eltype(DBu_batch), d_y, n_samples)
-        DBu_batch_pad  = vcat(y₁_zeros_pad, DBu_batch)
-        Du_batch + DBu_batch_pad
-    else
-        Du_batch   
-    end
-
-    y_batch = B_batch*u_z + DupDBu_batch .+ m_batch
+    y_batch = B_batch*u_z + Du_batch .+ m_batch
     z       = diagonal_z*u_z .+ location_z
     vcat(z, y_batch)
 end
