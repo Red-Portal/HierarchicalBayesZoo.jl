@@ -31,7 +31,7 @@ function update_subsampling(rng::Random.AbstractRNG, sub::Subsampling, sub_state
     epoch, batch_itr         = sub_state
     (step, batch), batch_itr′ = Iterators.peel(batch_itr)
     epoch′, batch_itr′′        = if isempty(batch_itr′)
-        epoch+1, init_batch(rng, sub.data_indices, sub.batchsize)
+        epoch+1, init_batch(rng, sub.data, sub.batchsize)
     else
         epoch, batch_itr′
     end
@@ -53,13 +53,13 @@ function AdvancedVI.estimate_gradient(
     sub_state, obj_state = state
     batch, sub_state′, sub_logstat = update_subsampling(rng, sub, sub_state)
 
-    q_full            = re(λ)
-    prob_sub, q_amort = subsample_problem(objective.prob, q_full, batch)
+    prob_sub          = subsample_problem(objective.prob, batch)
+    q_amort           = amortize(re(λ))
     obj_sub           = @set objective.prob = prob_sub
     λ_amort, re_amort = Optimisers.destructure(q_amort)
 
     out, obj_state′, obj_logstat = AdvancedVI.estimate_gradient(
-        rng, ad, obj_sub, obj_state, λ_amort, re_amort, out, batch
+        rng, ad, obj_sub, obj_state, λ_amort, re_amort, out
     )
     out, (sub_state′, obj_state′), merge(sub_logstat, obj_logstat)
 end

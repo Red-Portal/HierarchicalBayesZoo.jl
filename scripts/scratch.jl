@@ -21,28 +21,17 @@ using Optimisers
 using AdvancedVI
 using HierarchicalBayesZoo
 
-function construct_variational(model)
-    n_dims_global = local_dimension(model)
-    n_dims_local  = global_dimension(model)
-    n_dims        = n_dims_global+n_dims_local
-    q             = VILocationScale(
-        zeros(Float32, n_dims),
-        Diagonal(ones(Float32, n_dims)),
-        Normal()
-    )
-    AmortizedLocationScale(q, n_dims_global, n_dims_local, Int[])
-end
-
 function main()
     seed = (0x38bef07cf9cc549d, 0x49e2430080b3f797)
     rng  = Philox4x(UInt64, seed, 8)
     CUDA.allowscalar(false)
 
-    use_cuda = false
+    use_cuda = true
+    diagband = true
 
     #n_obs      = 100
     #n_dims     = 2
-    prob      = Volatility()
+    prob      = Volatility(; use_cuda)
 
     n_samples = 10
     advi      = ADVICUDA(prob, n_samples, use_cuda)
@@ -51,9 +40,15 @@ function main()
     #advidoubly = Subsampling(advi, batchsize, data_indices)
 
     d     = LogDensityProblems.dimension(prob)
-    q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(ones(Float32, d)))
+
+    @info("", d = d)
+
+    q     = StructuredLocationScale(prob; use_cuda, diagband)
+
+    #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)
-        #construct_variational(prob)
+    #q     = VIMeanFieldGaussian(CUDA.zeros(Float32, d), Diagonal(.1f0*CUDA.ones(Float32, d)))
+    #q     = VIFullRankGaussian(CUDA.zeros(Float32, d), 0.1f0*Eye{Float32}(d) |> Matrix |> Flux.gpu |> LowerTriangular)
     λ, re = Optimisers.destructure(q)
 
     n_max_iter = 2*10^4
@@ -65,7 +60,7 @@ function main()
         #callback! = callback!,
         rng       = rng,
         adbackend = ADTypes.AutoZygote(),
-        optimizer = Optimisers.Adam(1f-2)
+        optimizer = Optimisers.Adam(3f-3)
     )
     elbo = [stat.elbo for stat ∈ stats]
     plot(elbo, ylims=quantile(elbo, (0.1, 1.))) |> display

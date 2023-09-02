@@ -73,3 +73,69 @@ function forward(::ExpBijector, y::AbstractArray{<:Real})
     x = exp.(y)
     x, sum(y)
 end
+
+struct VecToTril{VecInt <: AbstractVector{<:Integer}}
+    d::Int
+    chol_idx::VecInt
+end
+
+@functor VecToTril
+
+function VecToTril(d::Int, k::Int = 0)
+    idx_mat      = reshape(collect(1:d*d), (d,d))
+    chol_idx_mat = tril(idx_mat, k)
+    chol_idx_vec = chol_idx_mat[chol_idx_mat .!= 0]
+    VecToTril(d, chol_idx_vec)
+end
+
+function _vectotril(
+    d::Int, chol_idx::AbstractVector{<:Integer}, x::AbstractVector
+)
+    L = similar(x, d, d)
+    fill!(L, zero(eltype(x)))
+    L[chol_idx] = x
+    L
+end
+
+@adjoint function (vectotril::VecToTril)(x::AbstractVector)
+    @unpack d, chol_idx = vectotril
+    L = _vectotril(d, chol_idx, x)
+    L, Δ -> (nothing, reshape(Δ[chol_idx], length(x)),)
+end
+
+function (vectotril::VecToTril)(x::AbstractVector)
+    @unpack d, chol_idx = vectotril
+    _vectotril(d, chol_idx, x)
+end
+
+struct CorrCholBijector{VecInt <: AbstractVector{<:Integer}}
+    vectostricttril::VecToTril{VecInt}
+end
+
+function CorrCholBijector(d::Int)
+    CorrCholBijector(VecToTril(d, -1))
+end
+
+function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
+    vectotril = b.vectostricttril
+
+    ϵ         = eps(eltype(y))
+    t         = @. clamp(tanh(y), -1 + ϵ, 1 - ϵ)
+    r         = vectotril(t)
+    ℓsqrt1mr² = @. log(1 - r*r)/2
+
+    # Cumulative product in log-pace
+    ℓsqrt1mr²_cumprd    = cumsum(ℓsqrt1mr², dims=2)
+    sqrt1mr²_cumprd     = exp.(ℓsqrt1mr²_cumprd)
+
+    pad = @ignore_derivatives if y isa CuArray
+        CUDA.ones(eltype(y), size(sqrt1mr²_cumprd,1))
+    else
+        ones(eltype(y), size(sqrt1mr²_cumprd,1))
+    end
+    sqrt1mr²_cumprd_pad = hcat(pad, sqrt1mr²_cumprd[:,1:end-1])
+    L = ((r + I).*sqrt1mr²_cumprd_pad) |> LowerTriangular
+    
+    z1m_cumprod = 1 .- cumsum(L.*L, -1)
+end
+

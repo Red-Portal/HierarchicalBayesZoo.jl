@@ -18,44 +18,87 @@ struct VolatilityParam{
     Mat <: AbstractMatrix{F},
     Vec <: AbstractVector{F},
 }
-    y      ::Mat
-    μ      ::Vec
-    η_ϕ    ::Vec
-    η_τ    ::Vec
-    η_L⁻¹_Σ::Vec
+    μ    ::Vec
+    η_ϕ  ::Vec
+    η_τ  ::Vec
+    η_L_Σ::Vec
+    y    ::Mat
 end
 
 @functor VolatilityParam
 
-function Volatility(blocksize::Integer = 128)
-    data, header   = readdlm(datadir("datasets", "snp500.csv"), ','; header=true)
-    snp500_closing = convert(Vector{Float32}, data[end-1000:end,5])
-    snp500_logret  = log.(snp500_closing[2:end]) - log.(snp500_closing[1:end-1])
-    snp500_logret_centered = snp500_logret .- mean(snp500_logret)
+function Volatility(; use_cuda = false, blocksize::Integer = 128)
+    currencies = [
+        "EUR",
+        "JPY",
+        "GBP",
+        "AUD",
+        "CAD",
+        "CHF",
+        "HKD",
+        "SGD",
+        "SEK",
+        "KRW",
+    ]
 
-    x = vcat(snp500_logret', snp500_logret' + 0.1*randn(size(snp500_logret')))
+    df = mapreduce(vcat, currencies) do name
+        df       = CSV.read(datadir("datasets", "currencies", "$(name)=X.csv"), DataFrame)
+        df.Name .= name
+        @chain df begin
+            @select(:Date, :Close, :Name)
+            @subset((:Date .>= Date("2013-01-01")) .&& (:Date .<= Date("2022-12-31")))
+            @subset(:Close .!= "null")
+            @transform(:Close = parse.(Float64, :Close))
+        end
+    end
+
+    eur_date =  filter(row -> row.Name .== "EUR", df).Date
+    @assert eur_date == filter(row -> row.Name .== "JPY", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "GBP", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "AUD", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "CAD", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "CHF", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "HKD", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "SGD", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "SEK", df).Date 
+    @assert eur_date == filter(row -> row.Name .== "KRW", df).Date 
+
+    closing            = reshape(Array(df.Close), (:,10)) |> transpose |> Array
+    logreturn          = log.(closing[:,2:end]) - log.(closing[:,1:end-1])
+    logreturn_centered = logreturn .- mean(logreturn, dims=2)
+   
+    #x_cpu = Array{Float32}(logreturn_centered)
+    x_cpu = Array{Float32}(logreturn_centered)[:,end-200:end]
+    x     = use_cuda ? Flux.gpu(x_cpu) : x_cpu
 
     d = size(x, 1)
     n = size(x, 2)
     θ = VolatilityParam(
-        similar(x, d, n),          # y
-        similar(x, d),             # μ
-        similar(x, d),             # η_ϕ
-        similar(x, d),             # η_τ
-        similar(x, (d^2 + d) ÷ 2), # η_τ
+        similar(x, d),               # μ
+        similar(x, d),               # η_ϕ
+        similar(x, d),               # η_τ
+        similar(x, (d*(d - 1)) ÷ 2), # η_Σ
+        similar(x, d, n),            # y
     )
     _, re = Optimisers.destructure(θ)
 
-    # n_dims      = length(θ)
-    # local_idxs  = first(1:, n_data-1)
-    # global_idxs = last( 1:n_dims, n_dims - length(local_idxs))
+    Volatility(x, re, 1f0)
+end
 
-    # local_blocks_nonoverlap = Iterators.partition(local_idxs, blocksize) |> collect
-    # map(local_blocks_nonoverlap) do local_block
-    #     local_block
-    # end
+function StructuredLocationScale(
+    prob::Volatility; use_cuda=false, diagband=false
+)
+    x = prob.x
+    d = size(x, 1)
+    n = size(x, 2)
 
-    Volatility(x, re, 1f0) #, global_idxs, local_block_idxs, 1)
+    d_local  = d
+    d_global = d*3 + ((d*(d - 1)) ÷ 2)
+
+    σ_init = sqrt(.1f0)
+    IsoStructuredLocationScale(
+        d_global, d_local, n, σ_init; use_cuda, diagband
+    )
 end
 
 # function subsample_problem(
@@ -83,76 +126,66 @@ function LogDensityProblems.capabilities(::Type{<: Volatility})
     LogDensityProblems.LogDensityOrder{0}()
 end
 
-function normalprod(x::AbstractArray, μ::AbstractArray, L⁻¹::AbstractMatrix)
-    d = size(x, 1)
-    n = size(x, 2)
-    sum(normlogpdf, L⁻¹*(x .- μ)) + n*sum(log, diag(L⁻¹))
-end
-
-function diagnormalprod(x::AbstractArray, μ::AbstractArray, L⁻¹::AbstractMatrix)
-    d = size(x, 1)
-    n = size(x, 2)
-    sum(normlogpdf, L⁻¹*(x .- μ)) + n*sum(log, L⁻¹)
-end
-
 function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
     # Multivariate Stochastic Volatility 
-    # μ     ~ Cauchy(0, 10)
-    # ϕ     ~ Uniform(-1, 1)
-    # Σ_Q⁻¹ ~ LKJ
-    # τ     ~ Cauchy₊(0, 10)
-    # L     = diag(τ)ᵀ Σ_Q⁻¹ diag(τ)
-    # y₁    ~ N(μ, Q) 
+    # μ  ~ Cauchy(0, 10)
+    # ϕ  ~ Uniform(-1, 1)
+    # Q  ~ LKJ()
+    # τ  ~ Cauchy₊(0, 10)
+    # L  = diag(τ)ᵀ Σ_Q⁻¹ diag(τ)
+    # y₁ ~ N(μ, Q) 
     #
     # yₜ ~ N(μ + Φ*(yₜ₋₁ - μ), Q)
     # xₜ ~ N(0, exp(yₜ/2))
     @unpack x, likeadj = model
-    @unpack y, μ, η_ϕ, η_τ, η_L⁻¹_Σ = param
+    @unpack y, μ, η_ϕ, η_τ, η_L_Σ = param
 
     d = size(x,1)
     n = size(x,2)
 
-    y₁   = y[:,1]
-    yₜ   = y[:,2:end]
+    xₜ   = x
+    yₜ   = y
     yₜ₋₁ = y[:,1:end-1]
 
     @assert d == length(μ)
     @assert d == length(η_ϕ)
     @assert d == length(η_τ)
     @assert d == size(x,1)
-    @assert size(yₜ,2) == size(yₜ₋₁,2)
+    @assert size(yₜ,2) == size(yₜ₋₁,2)+1
 
-    x₁    = x[:,1]
-    xₜ    = x[:,2:end]
+    b⁻¹_Σ = Bijectors.VecCholeskyBijector(:L) |> inverse
+    b⁻¹_τ = bijector(Exponential())           |> inverse
+    b⁻¹_ϕ = bijector(Uniform{F}(-1, 1))       |> inverse
 
-    b⁻¹_Σ = Bijectors.PDVecBijector()   |> inverse
-    b⁻¹_ϕ = bijector(Uniform{F}(-1, 1)) |> inverse
-    b⁻¹_τ = bijector(Exponential())     |> inverse
+    L_Σ_chol, logabsJ_Σ = with_logabsdet_jacobian(b⁻¹_Σ, Flux.cpu(η_L_Σ))
+    τ,        logabsJ_τ = with_logabsdet_jacobian(b⁻¹_τ, Flux.cpu(η_τ))
+    ϕ,        logabsJ_ϕ = with_logabsdet_jacobian(b⁻¹_ϕ, η_ϕ)
 
-    L⁻¹_Σ, logabsJ_Σ = with_logabsdet_jacobian(b⁻¹_Σ, η_L⁻¹_Σ)
-    ϕ,     logabsJ_ϕ = with_logabsdet_jacobian(b⁻¹_ϕ, η_ϕ)
-    τ,     logabsJ_τ = with_logabsdet_jacobian(b⁻¹_τ, η_τ)
+    L⁻¹_Q_cpu   = inv(L_Σ_chol.L) ./ τ
+    L⁻¹_Q_dense = if η_L_Σ isa CuArray
+        Flux.gpu(L⁻¹_Q_cpu)
+    else
+        L⁻¹_Q_cpu
+    end
+    L⁻¹_Q = if L⁻¹_Q_dense isa CuArray
+        L⁻¹_Q_dense
+    else
+        LowerTriangular(L⁻¹_Q_dense)
+    end
 
-    L⁻¹_Q = L⁻¹_Σ ./ τ
+    ℓp_Q = logpdf(LKJCholesky(d, 1), L_Σ_chol)
+    ℓp_μ = sum(Base.Fix1(logpdf, Cauchy{F}( 0, 10)), μ)
+    ℓp_ϕ = sum(Base.Fix1(logpdf, Uniform{F}(-1, 1)), ϕ)
+    ℓp_τ = sum(Base.Fix1(logpdf, truncated(Cauchy{F}(0, 5), zero(F), nothing)), τ)
 
-    ℓp_μ = sum(Base.Fix1(logpdf, Cauchy{F}( 0, 10)),                  μ)
-    ℓp_ϕ = sum(Base.Fix1(logpdf, Uniform{F}(-1, 1)),                  ϕ)
-    ℓp_τ = sum(Base.Fix1(logpdf, truncated(Cauchy{F}(0, 5), 0, Inf)), τ)
-
-    L⁻¹_y₁ = L⁻¹_Q .* (@. sqrt(1 - ϕ^2))
-    ℓp_y₁  = sum(normlogpdf, L⁻¹_y₁*x) + sum(log, diag(L⁻¹_y₁))
-
-    μ_yₜ  = μ .+ (ϕ.*(yₜ₋₁ .- μ))
+    μ_yₜ  = hcat(μ, μ .+ (ϕ.*(yₜ₋₁ .- μ)))
     ℓp_yₜ = sum(normlogpdf, L⁻¹_Q*(yₜ - μ_yₜ)) + n*sum(log, diag(L⁻¹_Q))
-
-    L⁻¹_x₁_diag = @. exp(-y₁/2)
-    ℓp_x₁       = sum(normlogpdf, L⁻¹_x₁_diag.*x₁) + sum(log, L⁻¹_x₁_diag)
 
     L⁻¹_xₜ_diag = @. exp(-yₜ/2)
     ℓp_xₜ       = sum(normlogpdf, L⁻¹_xₜ_diag.*xₜ) + sum(log, L⁻¹_xₜ_diag)
 
-    likeadj*(ℓp_xₜ + ℓp_yₜ) + ℓp_x₁ + ℓp_y₁ +
-        ℓp_τ + ℓp_ϕ + ℓp_μ + logabsJ_τ + logabsJ_ϕ + logabsJ_Σ
+    likeadj*(ℓp_xₜ + ℓp_yₜ) + ℓp_τ + ℓp_ϕ + ℓp_μ + ℓp_Q +
+        logabsJ_τ + logabsJ_ϕ + logabsJ_Σ
 end
 
 function LogDensityProblems.logdensity(model, θ::AbstractVector)
@@ -163,7 +196,7 @@ function LogDensityProblems.dimension(model::Volatility)
     @unpack x = model
     d = size(x,1)
     n = size(x,2)
-    d*n + d*3 + ((d^2 + d) ÷ 2)
+    d*n + d*3 + ((d*(d - 1)) ÷ 2)
 end
 
 # function subsample_problem(model::Volatility, batch)
@@ -175,30 +208,3 @@ end
 #     Volatility(x[:,batch], likeadj, batch, data_indices)
 # end
 
-function test()
-    n_dims    = 10
-    n_obs     = 100
-    batchsize = 30
-
-    data_indices  = 2:n_obs
-    batch_indices = sample(data_indices, batchsize, replace=false)
-    model = Volatility(
-        randn(Float32, n_dims, n_obs), 1f0, batch_indices, data_indices,
-    )
-
-    y_total = randn(n_dims, n_obs)
-    y_idxs  = Set(vcat(batch_indices, batch_indices .- 1)) |> collect
-
-    y_batch = y_total[:, y_idxs]
-    y₁      = y_total[:, 1]
-    μ       = randn(n_dims)
-    η_τ     = randn(n_dims)
-    η_ϕ     = randn(n_dims)
-    η_L⁻¹_Σ = randn((n_dims^2 + n_dims) ÷ 2)
-
-    model = @set model.x = randn(Float32, n_dims, length(batch_indices))
-
-    z = vcat(reshape(y_batch, :), y₁, μ, η_τ, η_ϕ, η_L⁻¹_Σ)
-    Base.Fix1(LogDensityProblems.logdensity, model)(z)
-    #@benchmark Zygote.gradient(Base.Fix1(LogDensityProblems.logdensity, $model), $z)
-end

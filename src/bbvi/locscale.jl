@@ -1,5 +1,7 @@
 
-function StatsBase.entropy(q::VILocationScale{L, <:Diagonal, D}) where {L, D}
+function StatsBase.entropy(
+    q::VILocationScale{L, <:Union{Diagonal, <:AbstractTriangular}, D}
+) where {L, D}
     @unpack  location, scale, dist = q
     n_dims = length(location)
     n_dims*convert(eltype(location), entropy(dist)) + sum(x -> log(abs(x)), diag(scale))
@@ -46,4 +48,25 @@ function Distributions.rand(
     end
 
     vcat(z_locals..., z_global)
+end
+
+function Distributions.rand(
+    rng      ::CUDA.RNG,
+    q_x      ::VILocationScale{L, <:Diagonal, D},
+    n_samples::Int
+) where {L, D}
+    @unpack location, scale = q_x
+    u = randn(rng, size(location, 1), n_samples)
+    scale_diag = diag(scale)
+    (scale_diag.*u) .+ location
+end
+
+function Distributions.rand(
+    rng      ::CUDA.RNG,
+    q_x      ::VILocationScale{L, <:AbstractTriangular, D},
+    n_samples::Int
+) where {L, D}
+    @unpack location, scale = q_x
+    u = randn(rng, size(location, 1), n_samples)
+    scale*u .+ location
 end

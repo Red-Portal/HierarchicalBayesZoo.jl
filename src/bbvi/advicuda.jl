@@ -46,7 +46,6 @@ function AdvancedVI.estimate_gradient(
     λ           ::AbstractVector{<:Real},
     restructure,
     out         ::DiffResults.MutableDiffResult,
-    batch_idx = nothing
 )
     f(λ′) = begin
         q =  restructure(λ′)
