@@ -1,94 +1,132 @@
 
 struct StructuredLocationScale{
-    Vec           <: AbstractVector,
-    VecBatch      <: AbstractMatrix,
-    Mat           <: AbstractMatrix,
-    MatBatch      <: AbstractArray,
-    MatInt        <: AbstractMatrix{<:Integer},
-    VecInt        <: AbstractVector{<:Integer}
+    Loc       <: AbstractVector,
+    Idx       <: AbstractVector{<:Integer},
+    ScaleVals <: AbstractVector
 }
-    location_z::Vec
-    location_y::VecBatch
-    diagonal_z::Mat
-    diagonal_y::MatBatch
-    border    ::MatBatch
-    diag_idx  ::MatInt
-    triu_idx  ::MatInt
-    batch_idx ::VecInt
+    location ::Loc
+
+    scale_rows::Idx
+    scale_cols::Idx
+    # The first `length(location)` values are reserved to be
+    # the diagonal of the matrix
+    scale_vals::ScaleVals
+
+    batch_idx::Idx
 end
 
-@functor StructuredLocationScale (location_z, location_y, diagonal_z, diagonal_y, border)
+@functor StructuredLocationScale (location, scale_vals)
 
 function StatsBase.entropy(q::StructuredLocationScale)
-    @unpack diagonal_z, diagonal_y, diag_idx = q
-    d_z    = size(diagonal_z, 1)
-    d_y    = size(diagonal_y, 1)
-    n      = size(diagonal_y, 3)
-    d      = d_z + d_y*n
-    ℍ_base = d*log(2*π*ℯ)/2
-
-    logdet_z = sum(x -> log(abs(x)), diag(diagonal_z))
-    logdet_y = sum(x -> log(abs(x)), diagonal_y[diag_idx])
-    ℍ_base + logdet_z + logdet_y
+    @unpack location, scale_vals = q
+    d = length(location)
+    ℍ_base      = d*log(2*π*ℯ)/2
+    logdetscale = sum(x -> log(abs(x)), scale_vals[1:d])
+    ℍ_base + logdetscale
 end
 
-function IsoStructuredLocationScale(
-    d_z     ::Int,
-    d_y     ::Int,
-    n       ::Int,
-    isoscale::F;
+function StructuredLocationScale(
+    location   ::AbstractVector{F},
+    diagonal   ::AbstractVector{F},
+    offdiag_row::AbstractVector{I},
+    offdiag_col::AbstractVector{I},
+    offdiag_val::AbstractVector{F};
     use_cuda = false
-) where {F<:Real}
-    m_z  = use_cuda ? CUDA.zeros(F, d_z)         : zeros(F, d_z)
-    m_y  = use_cuda ? CUDA.zeros(F, d_y, n)      : zeros(F, d_y, n)
-    B    = use_cuda ? CUDA.zeros(F, d_y, n, d_z) : zeros(F, d_y, n, d_z)
-    D_z  = use_cuda ? CUDA.zeros(F, d_z, d_z)    : zeros(F, d_z, d_z)
-    D_y  = use_cuda ? CUDA.zeros(F, d_y, d_y, n) : zeros(F, d_y, d_y, n)
+) where {F<:Real, I<:Integer}
+    @assert length(offdiag_val) == length(offdiag_col)
+    @assert length(offdiag_val) == length(offdiag_row)
 
-    D_z[diagind(D_z)] .= isoscale
+    d = length(location)
 
-    diag_idx_cpu       = diagind(D_y[:,:,1])
-    diag_idx_block_cpu = mapreduce(hcat, 1:n) do i
-        (i-1)*d_y^2 .+ diag_idx_cpu
+    scale_rows = vcat(1:d,      offdiag_row)
+    scale_cols = vcat(1:d,      offdiag_col)
+    scale_vals = vcat(diagonal, offdiag_val)
+    batch_idx  = collect(1:d)
+
+    if use_cuda
+        StructuredLocationScale(
+            location   |> Flux.gpu,
+            scale_rows |> Flux.gpu,
+            scale_cols |> Flux.gpu,
+            scale_vals |> Flux.gpu,
+            batch_idx  |> Flux.gpu
+        )
+    else
+        StructuredLocationScale(
+            location,
+            scale_rows,
+            scale_cols,
+            scale_vals,
+            batch_idx
+        )
     end
-    diag_idx_bock_i32    = convert(Array{Int32}, diag_idx_block_cpu)
-    diag_idx_block       = use_cuda ? Flux.gpu(diag_idx_bock_i32) : diag_idx_bock_i32
-    D_y[diag_idx_block] .= isoscale
-
-    triu_entry         = triu(reshape(1:d_y*d_y, (d_y, d_y)), 1)
-    triu_idx           = triu_entry[triu_entry .!= 0]
-    block_triu_idx     = mapreduce(hcat, 1:n) do i
-        (i-1)*d_y^2 .+ triu_idx
-    end
-    block_triu_idx_i32 = convert(Array{Int32}, block_triu_idx)
-    block_triu_idx     = use_cuda ? Flux.gpu(block_triu_idx_i32) : block_triu_idx_i32
-
-    batch_idx_cpu = convert(Array{Int32}, collect(1:n))
-    batch_idx     = use_cuda ? Flux.gpu(batch_idx_cpu) : batch_idx_cpu
-
-    StructuredLocationScale(
-        m_z, m_y, D_z, D_y, B, diag_idx_block, block_triu_idx, batch_idx
-    )
 end
 
-function amortize(
-    q    ::StructuredLocationScale,
-    batch::AbstractVector{<:Integer}
+function diagonal_block_indices(block_start_idx::Int, block_dim::Int)
+    meshgrid      = Iterators.product(1:block_dim, 1:block_dim) |> collect
+    row_grid      = map(x -> x[1], meshgrid)
+    col_grid      = map(x -> x[2], meshgrid)
+    row_tril_grid = tril(row_grid, -1)
+    col_tril_grid = tril(col_grid, -1)
+
+    row_tril_idxs = row_tril_grid[row_tril_grid .!= 0]
+    col_tril_idxs = col_tril_grid[col_tril_grid .!= 0]
+
+    row_diagblock_idx = row_tril_idxs .+ block_start_idx
+    col_diagblock_idx = col_tril_idxs .+ block_start_idx
+    row_diagblock_idx, col_diagblock_idx
+end
+
+function bordered_diagonal_block_indices(
+    block_start_idx::Int, border_size::Int, block_dim::Int
 )
+    row_diagblock_idx, col_diagblock_idx = diagonal_block_indices(
+        block_start_idx, block_dim
+    )
+
+    row_border_idx = repeat((1:block_dim) .+ block_start_idx, inner=border_size)
+    col_border_idx = repeat(1:border_size, outer=block_dim)
+
+    row_idx = vcat(row_diagblock_idx, row_border_idx)
+    col_idx = vcat(col_diagblock_idx, col_border_idx)
+    row_idx, col_idx
+end
+
+function amortize(q::StructuredLocationScale, batch::AbstractVector{<:Integer})
     @set q.batch_idx = batch
 end
 
-function tril_batch(A, triu_idx)
-    A[triu_idx] .= zero(eltype(A))
-    A
+_sparsity_preserving_mul(A::AbstractSparseMatrix, x::AbstractArray) = A*x
+
+sparsity_preserving_mul(
+    A::CUDA.CUSPARSE.CuSparseMatrixCSC,
+    x::CUDA.CuMatrix,
+     ::AbstractVector{<:Integer}
+) = _sparsity_preserving_mul(A, x)
+
+@adjoint function sparsity_preserving_mul(
+    A   ::CUDA.CUSPARSE.CuSparseMatrixCSC,
+    x   ::CUDA.CuMatrix,
+    cols::AbstractVector{<:Integer}
+)
+    z = _sparsity_preserving_mul(A, x)
+    z, Δ -> begin
+        @unpack colPtr, rowVal, dims = A
+        # non-zero entries of the Jacobian.
+        jac_nz_vals = x[cols,:]
+        Δ_nz_vals   = Δ[rowVal,:]
+        ∂C_nz_vals  = sum(jac_nz_vals.*Δ_nz_vals, dims=2)[:,1]
+
+        ∂C = CUDA.CUSPARSE.CuSparseMatrixCSC(
+            colPtr, rowVal, ∂C_nz_vals, dims
+        )
+        (∂C, nothing, nothing)
+    end
 end
 
-@adjoint function tril_batch(A, triu_idx)
-    A[triu_idx] .= zero(eltype(A))
-    A, Δ -> begin
-        Δ[triu_idx] .= zero(eltype(A))
-        (Δ, nothing)
-    end
+@adjoint function CUDA.CUSPARSE.sparse(rows, cols, vals)
+    A = sparse(rows, cols, vals)
+    A, Δ -> (nothing, nothing, nonzeros(Δ))
 end
 
 function Distributions.rand(
@@ -96,29 +134,11 @@ function Distributions.rand(
     q        ::StructuredLocationScale,
     n_samples::Integer
 )
-    @unpack location_z, location_y, diagonal_z, diagonal_y, border, triu_idx, batch_idx = q
+    @unpack location, scale_rows, scale_cols, scale_vals, batch_idx = q
 
-    batchsize = length(batch_idx)
+    scale = sparse(scale_rows, scale_cols, scale_vals)
+    d     = length(batch_idx)
+    u     = randn(rng, eltype(location), d, n_samples)
 
-    n   = size(diagonal_y, 3)
-    d_z = size(diagonal_z, 1)
-    d_y = size(diagonal_y, 1)
-
-    u_z       = randn(rng, eltype(location_z), d_z, n_samples)
-    u_y_flat  = randn(rng, eltype(location_z), batchsize*d_y, n_samples)
-    u_y_batch = reshape(u_y_flat, (d_y, n_samples, batchsize))
-
-    m_batch   = reshape(location_y[:,batch_idx], :)
-    B_batch   = reshape(border[:,batch_idx,:],     (d_y*batchsize, d_z))
-    D_y_batch = reshape(diagonal_y[:,:,batch_idx], (d_y, d_y, batchsize))
-
-    triu_idx_batch = reshape(triu_idx[:,1:batchsize],:)
-    D_y_batch_tril = tril_batch(D_y_batch, triu_idx_batch)
-
-    Du_batch_perm = NNlib.batched_mul(D_y_batch_tril, u_y_batch)
-    Du_batch      = reshape(permutedims(Du_batch_perm, (1, 3, 2)), (d_y*batchsize, n_samples))
-
-    y_batch = B_batch*u_z + Du_batch .+ m_batch
-    z       = diagonal_z*u_z .+ location_z
-    vcat(z, y_batch)
+    sparsity_preserving_mul(scale, u, scale_cols) .+ location
 end

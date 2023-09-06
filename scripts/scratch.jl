@@ -43,7 +43,7 @@ function main()
     rng  = Philox4x(UInt64, seed, 8)
     CUDA.allowscalar(false)
 
-    use_cuda = false
+    use_cuda = true
 
     #n_obs      = 100
     #n_dims     = 2
@@ -59,31 +59,38 @@ function main()
 
     @info("", d = d)
 
-    #q     = StructuredLocationScale(prob; use_cuda)
+    q     = StructuredLocationScale(prob; use_cuda)
 
-    q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
+    #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)
     #q     = VIMeanFieldGaussian(CUDA.zeros(Float32, d), Diagonal(.1f0*CUDA.ones(Float32, d)))
     #q     = VIFullRankGaussian(CUDA.zeros(Float32, d), 0.1f0*Eye{Float32}(d) |> Matrix |> Flux.gpu |> LowerTriangular)
     λ, re = Optimisers.destructure(q)
 
-    γ = 3f-3
-    optimizer = Scheduler(Step(λ=3f-3, γ=0.5f0, step_sizes=8*10^3)) do lr
-        Optimisers.Adam(lr)
+    #optimizer = Scheduler(Step(λ=1f-2, γ=0.3f0, step_sizes=10^4)) do lr
+    #    Optimisers.Adam(lr)
+    #end
+    optimizer = Optimisers.Adam(.5f-2)
+
+    callback!(; λ, args...) = begin
+        if any(@. isnan(λ) | isinf(λ))
+            throw(ErrorException("NaN detected"))
+        end
+        nothing
     end
 
-    n_max_iter = 2*10^4
+    n_max_iter = 10^3
     q, stats, _ = optimize(
         #advidoubly,
         advi,
         q,
         n_max_iter;
-        #callback! = callback!,
+        callback! = callback!,
         rng       = rng,
         adbackend = ADTypes.AutoZygote(),
         optimizer = optimizer
     )
     elbo = [stat.elbo for stat ∈ stats]
-    plot(elbo, ylims=quantile(elbo, (0.1, 1.))) |> display
+    plot!(elbo, ylims=quantile(elbo, (0.1, 1.))) |> display
     q
 end

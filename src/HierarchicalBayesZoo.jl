@@ -10,29 +10,31 @@ export
     IsoStructuredLocationScale,
     StructuredLocationScale
 
+using CSV
+using DataFrames
+using DataFramesMeta
+
 using Accessors
 using Bijectors
 using CUDA
-using CSV
 using ChainRulesCore
-using DataFrames
-using DataFramesMeta
 using Dates
 using Distributions
 using DrWatson
-using Functors
-using Flux
 using FillArrays
+using Flux
+using Functors
 using LinearAlgebra
 using LogDensityProblems
 using LogExpFunctions
+using NNlib
+using Optimisers
 using Random
 using SimpleUnPack: @unpack
+using SparseArrays
 using SpecialFunctions
 using StatsBase
 using StatsFuns
-using Optimisers
-using NNlib
 using Zygote: @adjoint
 
 using DiffResults

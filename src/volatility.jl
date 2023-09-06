@@ -28,18 +28,18 @@ end
 
 @functor VolatilityParam
 
-function Volatility(; use_cuda = false, blocksize::Integer = 128)
+function Volatility(; use_cuda = false)
     currencies = [
         "EUR",
         "JPY",
         "GBP",
         "AUD",
-        "CAD",
-        "CHF",
-        "HKD",
-        "SGD",
-        "SEK",
-        "KRW",
+        # "CAD",
+        #"CHF",
+        #"HKD",
+        #"SGD",
+        #"SEK",
+        #"KRW",
     ]
 
     df = mapreduce(vcat, currencies) do name
@@ -54,22 +54,17 @@ function Volatility(; use_cuda = false, blocksize::Integer = 128)
     end
 
     eur_date =  filter(row -> row.Name .== "EUR", df).Date
-    @assert eur_date == filter(row -> row.Name .== "JPY", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "GBP", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "AUD", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "CAD", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "CHF", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "HKD", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "SGD", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "SEK", df).Date 
-    @assert eur_date == filter(row -> row.Name .== "KRW", df).Date 
 
-    closing            = reshape(Array(df.Close), (:,10)) |> transpose |> Array
+    for currency in currencies
+        @assert eur_date == filter(row -> row.Name .== currency, df).Date 
+    end
+
+    closing            = reshape(Array(df.Close), (:,length(currencies))) |> transpose |> Array
     logreturn          = log.(closing[:,2:end]) - log.(closing[:,1:end-1])
     logreturn_centered = logreturn .- mean(logreturn, dims=2)
    
     #x_cpu = Array{Float32}(logreturn_centered)
-    x_cpu = Array{Float32}(logreturn_centered)[:,end-200:end]
+    x_cpu = Array{Float32}(logreturn_centered)[:,end-50:end]
     x     = use_cuda ? Flux.gpu(x_cpu) : x_cpu
 
     d = size(x, 1)
@@ -96,9 +91,38 @@ function StructuredLocationScale(
     d_local  = d
     d_global = d*3 + ((d*(d - 1)) ÷ 2)
 
-    σ_init = sqrt(.1f0)
-    IsoStructuredLocationScale(
-        d_global, d_local, n, σ_init; use_cuda
+    location = zeros(eltype(x), n*d_local + d_global)
+    diagonal = vcat(
+        fill(convert(eltype(x), 0.1), d_global),
+        fill(convert(eltype(x), 1.0), n*d_local)
+    )
+
+    C_idx = []
+
+    # μ, η_ϕ, η_τ
+    block_idx  = 0
+    push!(C_idx, diagonal_block_indices(block_idx, 3*d))
+    block_idx += 3*d
+
+    # # η_Σ
+    # block_idx += (d*(d - 1)) ÷ 2
+
+    # for _ = 1:n
+    #     push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d))
+    #     block_idx += d
+    # end
+
+    offdiag_row = vcat([row_idxs for (row_idxs, col_idxs) ∈ C_idx]...)
+    offdiag_col = vcat([col_idxs for (row_idxs, col_idxs) ∈ C_idx]...)
+    offdiag_val = zeros(eltype(x), length(offdiag_row))
+
+    StructuredLocationScale(
+        location,
+        diagonal,
+        offdiag_row,
+        offdiag_col,
+        offdiag_val;
+        use_cuda
     )
 end
 

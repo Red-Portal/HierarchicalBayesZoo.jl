@@ -139,10 +139,13 @@ end
 function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
     @unpack vectotril1, vectotril2 = b
 
-    ϵ         = eps(eltype(y))
-    t         = @. clamp(tanh(y), -1 + ϵ, 1 - ϵ)
-    r         = vectotril1(t)
-    ℓsqrt1mr² = @. log(1 - r*r)/2
+    log2 = log(2*one(eltype(y)))
+
+    t = tanh.(y)
+    r = vectotril1(t)
+
+    ℓsqrt1mr²_flat = @. y + log2 - log1pexp(2*y)
+    ℓsqrt1mr²      = vectotril1(ℓsqrt1mr²_flat)
 
     # Cumulative product in log-pace
     ℓsqrt1mr²_cumprd = cumsum(ℓsqrt1mr², dims=2)
@@ -154,15 +157,16 @@ function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
         ones(eltype(y), size(sqrt1mr²_cumprd,1))
     end
     sqrt1mr²_cumprd_pad = hcat(pad, sqrt1mr²_cumprd[:,1:end-1])
+
     L_dense = ((r + I).*sqrt1mr²_cumprd_pad)
     L       = LowerTriangular(L_dense)
     
     z1m_cumprod           = 1 .- cumsum(L_dense.*L_dense, dims=2)
     z1m_cumprod_tril      = triltovec(vectotril2, z1m_cumprod)
-    stick_breaking_logdet = 0.5*sum(@. log(abs(z1m_cumprod_tril)))
-    log2                  = log(2*one(eltype(y)))
+    ϵ                     = eps(eltype(z1m_cumprod_tril))
+    stick_breaking_logdet = sum(@. log(abs(z1m_cumprod_tril) + ϵ))/2
     tanh_logdet           = -2*sum(@. y + StatsFuns.softplus(-2*y) - log2)
-    logjacabsdet          = stick_breaking_logdet + tanh_logdet
-    L, logjacabsdet
+    logabsdetjac          = stick_breaking_logdet + tanh_logdet
+    L, logabsdetjac
 end
 
