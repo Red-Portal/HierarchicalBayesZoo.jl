@@ -1,4 +1,6 @@
 
+using Zygote
+
 struct StructuredLocationScale{
     Loc       <: AbstractVector,
     Idx       <: AbstractVector{<:Integer},
@@ -8,7 +10,8 @@ struct StructuredLocationScale{
 
     scale_rows::Idx
     scale_cols::Idx
-    # The first `length(location)` values are reserved to be
+
+    # The first 1:`length(location)` values are reserved to be
     # the diagonal of the matrix
     scale_vals::ScaleVals
 
@@ -99,34 +102,52 @@ end
 _sparsity_preserving_mul(A::AbstractSparseMatrix, x::AbstractArray) = A*x
 
 sparsity_preserving_mul(
-    A::CUDA.CUSPARSE.CuSparseMatrixCSC,
-    x::CUDA.CuMatrix,
+    A::AbstractSparseMatrix,
+    x::AbstractMatrix,
+     ::AbstractVector{<:Integer},
      ::AbstractVector{<:Integer}
 ) = _sparsity_preserving_mul(A, x)
 
 @adjoint function sparsity_preserving_mul(
-    A   ::CUDA.CUSPARSE.CuSparseMatrixCSC,
-    x   ::CUDA.CuMatrix,
+    A   ::AbstractSparseMatrix,
+    x   ::AbstractMatrix,
+    rows::AbstractVector{<:Integer},
     cols::AbstractVector{<:Integer}
 )
     z = _sparsity_preserving_mul(A, x)
     z, Δ -> begin
         @unpack colPtr, rowVal, dims = A
         # non-zero entries of the Jacobian.
+
         jac_nz_vals = x[cols,:]
-        Δ_nz_vals   = Δ[rowVal,:]
+        Δ_nz_vals   = Δ[rows,:]
         ∂C_nz_vals  = sum(jac_nz_vals.*Δ_nz_vals, dims=2)[:,1]
 
+        #@assert rowVal == rows
+
+        #∂C = sparse(rows, cols, ∂C_nz_vals)
         ∂C = CUDA.CUSPARSE.CuSparseMatrixCSC(
             colPtr, rowVal, ∂C_nz_vals, dims
         )
-        (∂C, nothing, nothing)
+        (∂C, nothing, nothing, nothing)
     end
 end
 
-@adjoint function CUDA.CUSPARSE.sparse(rows, cols, vals)
-    A = sparse(rows, cols, vals)
-    A, Δ -> (nothing, nothing, nonzeros(Δ))
+function diffable_sparse(rows, cols, vals, m, n)
+    perm_idx    = sortperm(cols)
+    rows_sorted = rows[perm_idx]
+    cols_sorted = cols[perm_idx]
+    vals_sorted = vals[perm_idx]
+    sparse(rows_sorted, cols_sorted, vals_sorted, m, n)
+end
+
+@adjoint function sparse(rows, cols, vals, m, n)
+    # rows, cols, vals are assumed to be sorted with the column index
+    # A is assumed to be in the CSC format
+    A = sparse(rows, cols, vals, m, n)
+    A, Δ -> begin
+        (nothing, nothing, nonzeros(Δ), nothing, nothing)
+    end
 end
 
 function Distributions.rand(
@@ -136,9 +157,15 @@ function Distributions.rand(
 )
     @unpack location, scale_rows, scale_cols, scale_vals, batch_idx = q
 
-    scale = sparse(scale_rows, scale_cols, scale_vals)
-    d     = length(batch_idx)
+    perm_idx          = sortperm(scale_cols)
+    scale_rows_sorted = scale_rows[perm_idx]
+    scale_cols_sorted = scale_cols[perm_idx]
+    scale_vals_sorted = scale_vals[perm_idx]
+
+    B     = length(batch_idx)
+    d     = length(location)
+    scale = sparse(scale_rows_sorted, scale_cols_sorted, scale_vals_sorted, B, d)
     u     = randn(rng, eltype(location), d, n_samples)
 
-    sparsity_preserving_mul(scale, u, scale_cols) .+ location
+    sparsity_preserving_mul(scale, u, scale_rows_sorted, scale_cols_sorted) .+ location
 end

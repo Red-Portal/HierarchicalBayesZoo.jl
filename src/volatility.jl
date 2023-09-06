@@ -34,12 +34,12 @@ function Volatility(; use_cuda = false)
         "JPY",
         "GBP",
         "AUD",
-        # "CAD",
+        "CAD",
         #"CHF",
         #"HKD",
         #"SGD",
         #"SEK",
-        #"KRW",
+        "KRW",
     ]
 
     df = mapreduce(vcat, currencies) do name
@@ -63,8 +63,8 @@ function Volatility(; use_cuda = false)
     logreturn          = log.(closing[:,2:end]) - log.(closing[:,1:end-1])
     logreturn_centered = logreturn .- mean(logreturn, dims=2)
    
-    #x_cpu = Array{Float32}(logreturn_centered)
-    x_cpu = Array{Float32}(logreturn_centered)[:,end-50:end]
+    x_cpu = Array{Float32}(logreturn_centered)
+    #x_cpu = Array{Float32}(logreturn_centered)[:,end-50:end]
     x     = use_cuda ? Flux.gpu(x_cpu) : x_cpu
 
     d = size(x, 1)
@@ -93,7 +93,7 @@ function StructuredLocationScale(
 
     location = zeros(eltype(x), n*d_local + d_global)
     diagonal = vcat(
-        fill(convert(eltype(x), 0.1), d_global),
+        fill(convert(eltype(x), sqrt(0.1)), d_global),
         fill(convert(eltype(x), 1.0), n*d_local)
     )
 
@@ -104,13 +104,13 @@ function StructuredLocationScale(
     push!(C_idx, diagonal_block_indices(block_idx, 3*d))
     block_idx += 3*d
 
-    # # η_Σ
-    # block_idx += (d*(d - 1)) ÷ 2
+    # η_Σ
+    block_idx += (d*(d - 1)) ÷ 2
 
-    # for _ = 1:n
-    #     push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d))
-    #     block_idx += d
-    # end
+    for _ = 1:n
+        push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d))
+        block_idx += d
+    end
 
     offdiag_row = vcat([row_idxs for (row_idxs, col_idxs) ∈ C_idx]...)
     offdiag_col = vcat([col_idxs for (row_idxs, col_idxs) ∈ C_idx]...)
@@ -124,6 +124,31 @@ function StructuredLocationScale(
         offdiag_val;
         use_cuda
     )
+end
+
+function AdvancedVI.VIMeanFieldGaussian(prob::Volatility; use_cuda=false)
+    x        = prob.x
+    d        = size(x, 1)
+
+    x = prob.x
+    d = size(x, 1)
+    n = size(x, 2)
+
+    d_local  = d
+    d_global = d*3 + ((d*(d - 1)) ÷ 2)
+
+    location = zeros(eltype(x), n*d_local + d_global)
+    diagonal = vcat(
+        fill(convert(eltype(x), sqrt(0.1)), d_global),
+        fill(convert(eltype(x), 1.0), n*d_local)
+    )
+
+    if use_cuda
+        AdvancedVI.VIMeanFieldGaussian(
+            location |> Flux.gpu, Diagonal(diagonal |> Flux.gpu))
+    else
+        AdvancedVI.VIMeanFieldGaussian(location, Diagonal(diagonal))
+    end
 end
 
 # function subsample_problem(
