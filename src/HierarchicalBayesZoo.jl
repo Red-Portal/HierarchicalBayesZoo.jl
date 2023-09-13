@@ -1,14 +1,13 @@
 
 module HierarchicalBayesZoo
 
-export NNMFDirExp, Volatility, logdensity_ref
+export Gaussian, NNMFDirExp, Volatility, logdensity_ref
 export
     ADVICUDA,
     amortize,
     Subsampling,
     AmortizedLocationScale,
-    IsoStructuredLocationScale,
-    StructuredLocationScale
+    StructuredGaussian
 
 using CSV
 using DataFrames
@@ -48,9 +47,12 @@ include("bbvi/locscale.jl")
 include("bbvi/structured.jl")
 
 subsample_problem(prob, batch) = prob
+
+amortize(q) = q
  
 include("utils.jl")
 include("bijectors.jl")
+include("gaussians.jl")
 include("volatility.jl")
 include("nnmfdirexp.jl")
 include("nnmfgamgam.jl")

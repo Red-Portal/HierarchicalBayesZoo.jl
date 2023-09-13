@@ -63,8 +63,8 @@ function Volatility(; use_cuda = false)
     logreturn          = log.(closing[:,2:end]) - log.(closing[:,1:end-1])
     logreturn_centered = logreturn .- mean(logreturn, dims=2)
    
-    x_cpu = Array{Float32}(logreturn_centered)
-    #x_cpu = Array{Float32}(logreturn_centered)[:,end-50:end]
+    #x_cpu = Array{Float32}(logreturn_centered)
+    x_cpu = Array{Float32}(logreturn_centered)[:,end-100:end]
     x     = use_cuda ? Flux.gpu(x_cpu) : x_cpu
 
     d = size(x, 1)
@@ -81,7 +81,7 @@ function Volatility(; use_cuda = false)
     Volatility(x, re, 1f0, CorrCholBijector(d))
 end
 
-function StructuredLocationScale(
+function StructuredGaussian(
     prob::Volatility; use_cuda=false
 )
     x = prob.x
@@ -99,14 +99,13 @@ function StructuredLocationScale(
 
     C_idx = []
 
-    # μ, η_ϕ, η_τ
+    # global variables (dense block)
     block_idx  = 0
-    push!(C_idx, diagonal_block_indices(block_idx, 3*d))
-    block_idx += 3*d
+    push!(C_idx, diagonal_block_indices(block_idx, d_global))
+    block_idx += d_global
 
-    # η_Σ
-    block_idx += (d*(d - 1)) ÷ 2
-
+    # local variables (bordered block-diagonal)
+    # t = 1, ... n
     for _ = 1:n
         push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d))
         block_idx += d
@@ -126,10 +125,33 @@ function StructuredLocationScale(
     )
 end
 
-function AdvancedVI.VIMeanFieldGaussian(prob::Volatility; use_cuda=false)
-    x        = prob.x
-    d        = size(x, 1)
+function AdvancedVI.VIFullRankGaussian(
+    prob::Volatility; use_cuda=false
+)
+    x = prob.x
+    d = size(x, 1)
+    n = size(x, 2)
 
+    d_local  = d
+    d_global = d*3 + ((d*(d - 1)) ÷ 2)
+
+    location   = zeros(eltype(x), n*d_local + d_global)
+    scale_diag = vcat(
+        fill(convert(eltype(x), sqrt(0.1)), d_global),
+        fill(convert(eltype(x), 1.0), n*d_local)
+    )
+    scale = Diagonal(scale_diag) |> Matrix
+
+    if use_cuda
+        AdvancedVI.VIFullRankGaussian(
+            location |> Flux.gpu, LowerTriangular(scale |> Flux.gpu))
+    else
+        AdvancedVI.VIFullRankGaussian(location, LowerTriangular(scale))
+    end
+end
+
+
+function AdvancedVI.VIMeanFieldGaussian(prob::Volatility; use_cuda=false)
     x = prob.x
     d = size(x, 1)
     n = size(x, 2)
@@ -192,7 +214,6 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
 
     d = size(x,1)
     n = size(x,2)
-
     xₜ   = x
     yₜ   = y
     yₜ₋₁ = y[:,1:end-1]
@@ -210,7 +231,7 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
     τ,        logabsJ_τ = with_logabsdet_jacobian(b⁻¹_τ, Flux.cpu(η_τ))
     ϕ,        logabsJ_ϕ = with_logabsdet_jacobian(b⁻¹_ϕ, η_ϕ)
 
-    L⁻¹_Q_cpu   = inv(L_Σ_chol) ./ τ
+    L⁻¹_Q_cpu   = inv(L_Σ_chol)./τ
     L⁻¹_Q_dense = if η_L_Σ isa CuArray
         Flux.gpu(L⁻¹_Q_cpu)
     else
@@ -230,7 +251,7 @@ function logdensity(model, param::VolatilityParam{F,M,V}) where {F,M,V}
     μ_yₜ  = hcat(μ, μ .+ (ϕ.*(yₜ₋₁ .- μ)))
     ℓp_yₜ = sum(normlogpdf, L⁻¹_Q*(yₜ - μ_yₜ)) + n*sum(log, diag(L⁻¹_Q))
 
-    L⁻¹_xₜ_diag = @. exp(-yₜ/2)
+    L⁻¹_xₜ_diag = @. exp(-clamp(yₜ, -15, 15)/2)
     ℓp_xₜ       = sum(normlogpdf, L⁻¹_xₜ_diag.*xₜ) + sum(log, L⁻¹_xₜ_diag)
 
     likeadj*(ℓp_xₜ + ℓp_yₜ) + ℓp_τ + ℓp_ϕ + ℓp_μ + ℓp_Q +

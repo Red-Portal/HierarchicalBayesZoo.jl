@@ -39,40 +39,6 @@ function Optimisers.apply!(o::Scheduler, state, x, dx)
     return (t = state.t + 1, opt = new_state), new_dx
 end
 
-# struct Gaussian{L <: AbstractVector, S <: PDMats.PDMat}
-#     μ::L
-#     Σ::S
-# end
-
-# function LogDensityProblems.capabilities(::Type{<:Gaussian})
-#     LogDensityProblems.LogDensityOrder{0}()
-# end
-
-# function LogDensityProblems.dimension(model::Gaussian)
-#     length(model.μ)
-# end
-
-# function LogDensityProblems.logdensity(model::Gaussian, θ::AbstractVector)
-#     logpdf(MvNormal(model.μ, model.Σ), θ)
-# end
-
-# function StructuredLocationScale(prob::Gaussian; use_cuda::Bool=false)
-#     d        = length(prob.μ)
-#     location = zeros(eltype(prob.μ), d)
-#     diagonal = ones( eltype(prob.μ), d)
-
-#     offdiag_row, offdiag_col = HierarchicalBayesZoo.diagonal_block_indices(0, d)
-#     offdiag_val              = zeros(eltype(prob.μ), length(offdiag_row))
-#     HierarchicalBayesZoo.StructuredLocationScale(
-#         location,
-#         diagonal,
-#         offdiag_row,
-#         offdiag_col,
-#         offdiag_val;
-#         use_cuda
-#     )
-# end
-
 function main()
     seed = (0x38bef07cf9cc549d, 0x49e2430080b3f797)
     rng  = Philox4x(UInt64, seed, 8)
@@ -98,8 +64,9 @@ function main()
 
     @info("", d = d)
 
-    q = HierarchicalBayesZoo.StructuredLocationScale(prob; use_cuda)
+    q = HierarchicalBayesZoo.StructuredGaussian(prob; use_cuda)
     #q = AdvancedVI.VIMeanFieldGaussian(prob; use_cuda)
+    #q = AdvancedVI.VIFullRankGaussian(prob; use_cuda)
 
     #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)
@@ -107,12 +74,12 @@ function main()
     #q     = VIFullRankGaussian(CUDA.zeros(Float32, d), 0.1f0*Eye{Float32}(d) |> Matrix |> Flux.gpu |> LowerTriangular)
     λ, re = Optimisers.destructure(q)
 
-    #optimizer = Scheduler(Step(λ=1f-2, γ=0.3f0, step_sizes=10^4)) do lr
-    #    Optimisers.Adam(lr)
-    #end
-    optimizer = Optimisers.Adam(1f-2)
+    optimizer = Scheduler(Step(λ=1f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
+        Optimisers.Adam(lr)
+    end
+    #optimizer = Optimisers.Adam(1f-2)
 
-    callback!(; λ, args...) = begin
+    callback!(; stat, g, λ, args...) = begin
         if any(@. isnan(λ) | isinf(λ))
             throw(ErrorException("NaN detected"))
         end
@@ -131,6 +98,6 @@ function main()
         optimizer = optimizer
     )
     elbo = [stat.elbo for stat ∈ stats]
-    plot(elbo, ylims=quantile(elbo, (0., 1.))) |> display
+    plot!(elbo, ylims=quantile(elbo, (0.1, 1.))) |> display
     q
 end

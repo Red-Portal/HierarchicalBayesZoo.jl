@@ -95,6 +95,23 @@ function bordered_diagonal_block_indices(
     row_idx, col_idx
 end
 
+# function bordered_diagonal_trapezoid_block_indices(
+#     block_start_idx::Int,
+#     border_size    ::Int,
+#     rectangle_len  ::Int,
+#     block_dim      ::Int
+# )
+#     row_bordtril_idx, col_bordtril_idx = bordered_diagonal_block_indices(
+#         block_start_idx, border_size, block_dim)
+
+#     row_rect_idx = repeat(block_start_idx+1:block_dim+block_start_idx, inner=rectangle_len)
+#     col_rect_idx = repeat(block_start_idx .- (0:rectangle_len-1),      outer=block_dim)
+
+#     row_idx = vcat(row_bordtril_idx, row_rect_idx)
+#     col_idx = vcat(col_bordtril_idx, col_rect_idx)
+#     row_idx, col_idx
+# end
+
 function amortize(q::StructuredLocationScale, batch::AbstractVector{<:Integer})
     @set q.batch_idx = batch
 end
