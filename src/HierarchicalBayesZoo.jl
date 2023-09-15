@@ -23,6 +23,7 @@ using DrWatson
 using FillArrays
 using Flux
 using Functors
+using KernelAbstractions
 using LinearAlgebra
 using LogDensityProblems
 using LogExpFunctions
@@ -52,9 +53,13 @@ amortize(q) = q
  
 include("utils.jl")
 include("bijectors.jl")
-include("gaussians.jl")
-include("volatility.jl")
-include("nnmfdirexp.jl")
+
+include("models/volatility/model.jl")
+include("models/volatility/interfaces.jl")
+include("models/nnmfdirexp/model.jl")
+include("models/nnmfdirexp/interfaces.jl")
+
+#include("gaussians.jl")
 include("nnmfgamgam.jl")
 
 end
