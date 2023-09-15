@@ -10,6 +10,8 @@ struct Volatility{
     b⁻¹_Σ       ::CorrCholBijector
 end
 
+@functor Volatility (x, recon_params)
+
 struct VolatilityParam{
     F   <: Real,
     Mat <: AbstractMatrix{F},

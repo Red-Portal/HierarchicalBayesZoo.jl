@@ -1,5 +1,5 @@
 
-function Volatility(; use_cuda = false)
+function Volatility()
     currencies = [
         "EUR",
         "JPY",
@@ -35,8 +35,7 @@ function Volatility(; use_cuda = false)
     logreturn_centered = logreturn .- mean(logreturn, dims=2)
    
     #x_cpu = Array{Float32}(logreturn_centered)
-    x_cpu = Array{Float32}(logreturn_centered)[:,end-100:end]
-    x     = use_cuda ? Flux.gpu(x_cpu) : x_cpu
+    x = Array{Float32}(logreturn_centered)[:,end-100:end]
 
     d = size(x, 1)
     n = size(x, 2)
@@ -52,9 +51,7 @@ function Volatility(; use_cuda = false)
     Volatility(x, re, 1f0, CorrCholBijector(d))
 end
 
-function StructuredGaussian(
-    prob::Volatility; use_cuda=false
-)
+function StructuredGaussian(prob::Volatility)
     x = prob.x
     d = size(x, 1)
     n = size(x, 2)
@@ -92,7 +89,6 @@ function StructuredGaussian(
         offdiag_row,
         offdiag_col,
         offdiag_val;
-        use_cuda
     )
 end
 

@@ -16,8 +16,7 @@ SimplexBijector(K::Int) = SimplexBijector(Float64, K)
 function forward(b::SimplexBijector, y::AbstractMatrix{F}) where {F <: Real}
     # In : y ∈ ℝ^{(K-1) × N}
     # Out: x ∈ ℝ^{K × N}, where colums are vectors on the K-unit simplex
-    dev = KernelAbstractions.get_backend(y)
-    N   = size(y, 2)
+    N = size(y, 2)
 
     y_off = y .+ b.offset
     ℓz    = loglogistic.(y_off)
@@ -27,7 +26,7 @@ function forward(b::SimplexBijector, y::AbstractMatrix{F}) where {F <: Real}
     # - One could use `cumprod` with padding but the ChainRule is not
     #   vectorized, so not GPU-friendly.
     ℓzm1_cumprd_part = cumsum(ℓzm1, dims=1)
-    padding          = KernelAbstractions.zeros(dev, F, 1, N)
+    padding          = @ignore_derivatives zeros(get_backend(y), F, 1, N)
     ℓzm1_cumprd      = vcat(padding, ℓzm1_cumprd_part[1:end-1,:])
     
     ℓx_1toKm1 = ℓz + ℓzm1_cumprd
@@ -107,10 +106,11 @@ function CorrCholBijector(d::Int)
     CorrCholBijector(VecToTril(d, -1), VecToTril(d, -2))
 end
 
-function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
+function forward(b::CorrCholBijector, y::AbstractVector{F}) where {F<:Real}
     @unpack vectotril1, vectotril2 = b
 
-    log2 = log(2*one(eltype(y)))
+    ϵ    = eps(F)
+    log2 = log(2*one(F))
 
     t = tanh.(y)
     r = vectotril1(t)
@@ -122,19 +122,14 @@ function forward(b::CorrCholBijector, y::AbstractVector{<:Real})
     ℓsqrt1mr²_cumprd = cumsum(ℓsqrt1mr², dims=2)
     sqrt1mr²_cumprd  = exp.(ℓsqrt1mr²_cumprd)
 
-    pad = @ignore_derivatives if y isa CuArray
-        CUDA.ones(eltype(y), size(sqrt1mr²_cumprd,1))
-    else
-        ones(eltype(y), size(sqrt1mr²_cumprd,1))
-    end
-    sqrt1mr²_cumprd_pad = hcat(pad, sqrt1mr²_cumprd[:,1:end-1])
+    padding             = @ignore_derivatives ones(get_backend(y), F, size(sqrt1mr²_cumprd,1))
+    sqrt1mr²_cumprd_pad = hcat(padding, sqrt1mr²_cumprd[:,1:end-1])
 
     L_dense = ((r + I).*sqrt1mr²_cumprd_pad)
     L       = LowerTriangular(L_dense)
     
     z1m_cumprod           = 1 .- cumsum(L_dense.*L_dense, dims=2)
     z1m_cumprod_tril      = triltovec(vectotril2, z1m_cumprod)
-    ϵ                     = eps(eltype(z1m_cumprod_tril))
     stick_breaking_logdet = sum(@. log(abs(z1m_cumprod_tril) + ϵ))/2
     tanh_logdet           = -2*sum(@. y + StatsFuns.softplus(-2*y) - log2)
     logabsdetjac          = stick_breaking_logdet + tanh_logdet

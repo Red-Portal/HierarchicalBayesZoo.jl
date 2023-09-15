@@ -18,7 +18,37 @@ struct StructuredLocationScale{
     batch_idx::Idx
 end
 
-@functor StructuredLocationScale (location, scale_vals)
+@functor StructuredLocationScale
+
+struct RestructStructuredLocScale{Q <: StructuredLocationScale}
+    q::Q
+end
+
+function update(q_base::StructuredLocationScale, flat::AbstractVector)
+    @unpack location, scale_rows, scale_cols, batch_idx = q_base
+    location′   = flat[1:length(location)]
+    scale_vals′ = flat[length(location)+1:end]
+    StructuredLocationScale(
+        location′, scale_rows, scale_cols, scale_vals′, batch_idx)
+end
+
+function (re::RestructStructuredLocScale)(flat::AbstractVector)
+    update(re.q, flat)
+end
+
+@adjoint function (re::RestructStructuredLocScale)(flat::AbstractVector)
+    q = update(re.q, flat)
+    q, Δ -> begin
+        ∂location   = Δ.location
+        ∂scale_vals = Δ.scale_vals
+        (nothing, vcat(∂location, ∂scale_vals),)
+    end
+end
+
+function Optimisers.destructure(q::StructuredLocationScale)
+    @unpack location, scale_vals = q 
+    vcat(location, scale_vals), RestructStructuredLocScale(q)
+end
 
 function StatsBase.entropy(q::StructuredLocationScale)
     @unpack location, scale_vals = q
@@ -33,8 +63,7 @@ function StructuredLocationScale(
     diagonal   ::AbstractVector{F},
     offdiag_row::AbstractVector{I},
     offdiag_col::AbstractVector{I},
-    offdiag_val::AbstractVector{F};
-    use_cuda = false
+    offdiag_val::AbstractVector{F}
 ) where {F<:Real, I<:Integer}
     @assert length(offdiag_val) == length(offdiag_col)
     @assert length(offdiag_val) == length(offdiag_row)
@@ -46,23 +75,13 @@ function StructuredLocationScale(
     scale_vals = vcat(diagonal, offdiag_val)
     batch_idx  = collect(1:d)
 
-    if use_cuda
-        StructuredLocationScale(
-            location   |> Flux.gpu,
-            scale_rows |> Flux.gpu,
-            scale_cols |> Flux.gpu,
-            scale_vals |> Flux.gpu,
-            batch_idx  |> Flux.gpu
-        )
-    else
-        StructuredLocationScale(
-            location,
-            scale_rows,
-            scale_cols,
-            scale_vals,
-            batch_idx
-        )
-    end
+    StructuredLocationScale(
+        location,
+        scale_rows,
+        scale_cols,
+        scale_vals,
+        batch_idx
+    )
 end
 
 function diagonal_block_indices(block_start_idx::Int, block_dim::Int)
@@ -94,23 +113,6 @@ function bordered_diagonal_block_indices(
     col_idx = vcat(col_diagblock_idx, col_border_idx)
     row_idx, col_idx
 end
-
-# function bordered_diagonal_trapezoid_block_indices(
-#     block_start_idx::Int,
-#     border_size    ::Int,
-#     rectangle_len  ::Int,
-#     block_dim      ::Int
-# )
-#     row_bordtril_idx, col_bordtril_idx = bordered_diagonal_block_indices(
-#         block_start_idx, border_size, block_dim)
-
-#     row_rect_idx = repeat(block_start_idx+1:block_dim+block_start_idx, inner=rectangle_len)
-#     col_rect_idx = repeat(block_start_idx .- (0:rectangle_len-1),      outer=block_dim)
-
-#     row_idx = vcat(row_bordtril_idx, row_rect_idx)
-#     col_idx = vcat(col_bordtril_idx, col_rect_idx)
-#     row_idx, col_idx
-# end
 
 function amortize(q::StructuredLocationScale, batch::AbstractVector{<:Integer})
     @set q.batch_idx = batch

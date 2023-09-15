@@ -45,10 +45,11 @@ function main()
     CUDA.allowscalar(false)
 
     use_cuda = true
+    dev      = use_cuda ? Flux.gpu : Flux.cpu
 
     #n_obs      = 100
     #n_dims     = 2
-    prob      = Volatility(; use_cuda)
+    prob      = Volatility() |> dev
 
     # d    = 10
     # L    = 0.1f0*tril(randn(Float32, d, d))
@@ -64,7 +65,7 @@ function main()
 
     @info("", d = d)
 
-    q = HierarchicalBayesZoo.StructuredGaussian(prob; use_cuda)
+    q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
     #q = AdvancedVI.VIMeanFieldGaussian(prob; use_cuda)
     #q = AdvancedVI.VIFullRankGaussian(prob; use_cuda)
 

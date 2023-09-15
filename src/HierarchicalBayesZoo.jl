@@ -23,7 +23,7 @@ using DrWatson
 using FillArrays
 using Flux
 using Functors
-using KernelAbstractions
+using KernelAbstractions: get_backend, ones, zeros
 using LinearAlgebra
 using LogDensityProblems
 using LogExpFunctions
