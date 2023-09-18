@@ -61,8 +61,8 @@ function main()
 
     @info("", d = LogDensityProblems.dimension(prob))
 
-    q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
-    #q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
+    #q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
+    q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
     #q = AdvancedVI.VIFullRankGaussian(prob) |> dev
 
     #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
@@ -74,7 +74,7 @@ function main()
     #optimizer = Scheduler(Step(λ=.5f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
     #    Optimisers.Adam(lr)
     #end
-    optimizer = Optimisers.Adam(1f-3)
+    optimizer = Optimisers.Adam(1f-2)
 
     callback!(; stat, g, λ, args...) = begin
         if any(@. isnan(λ) | isinf(λ))

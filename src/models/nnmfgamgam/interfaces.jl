@@ -1,7 +1,7 @@
 
-struct BSSNNMF
-    data_portion::Float64
-end
+# struct BSSNNMF
+#     data_portion::Float64
+# end
 
 function problem(prob::BSSNNMF)
     song  = load(datadir("datasets", "songs", "rumble.jld2"))
@@ -16,9 +16,9 @@ function problem(prob::BSSNNMF)
     y_sub_quant = round.(Int16, y_sub / nfft * 2^15) 
 
     α_θ = 1.0
-    β_θ = 0.01
+    β_θ = 1.0
     α_β = 1.0
-    β_β = 0.01
+    β_β = 0.1
     K   = 3
     I   = size(y_sub_quant,1)
     U   = size(y_sub_quant,2)

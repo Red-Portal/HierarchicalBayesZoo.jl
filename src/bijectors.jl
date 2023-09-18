@@ -16,10 +16,11 @@ SimplexBijector(K::Int) = SimplexBijector(Float64, K)
 function forward(b::SimplexBijector, y::AbstractMatrix{F}) where {F <: Real}
     # In : y ∈ ℝ^{(K-1) × N}
     # Out: x ∈ ℝ^{K × N}, where colums are vectors on the K-unit simplex
-    N = size(y, 2)
+    N  = size(y, 2)
 
+    ϵ     = eps(F)
     y_off = y .+ b.offset
-    ℓz    = loglogistic.(y_off)
+    ℓz    = @. clamp(loglogistic(y_off), log(ϵ), ϵ)
     ℓzm1  = log1mexp.(ℓz)
 
     # Cumulative product in log-pace

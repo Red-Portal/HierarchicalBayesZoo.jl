@@ -1,45 +1,27 @@
 
-struct MovieLensNNMF
+struct BSSNNMF
     data_portion::Float64
 end
 
-struct FashionNNMF
-    data_portion::Float64
-end
+# function problem(prob::BSSNNMF)
+#     song  = load(datadir("datasets", "songs", "rumble.jld2"))
+#     y     = song["signal"]
+#     nfft  = 512
+#     spec  = tfd(y[:,1], Spectrogram(; nfft, noverlap=nfft÷2, window=hamming))
+#     y     = spec.power
+#     U_sub = round(Int, prob.data_portion*size(y,2))
+#     y_sub = y[:,1:U_sub]
 
-function problem(prob::MovieLensNNMF)
-    # y[1] is the user
-    # y[2] is the item
-    # y[3] is the rating
+#     # Quantization to form Poisson noise
+#     y_sub_quant = round.(Int16, y_sub / nfft * 2^15) 
 
-    #I = 1682
-    #U = 943
-    y_entries = readdlm(datadir("datasets", "movielens", "u.data"), Int)[:,1:3]
-    y         = sparse(y_entries[:,2], y_entries[:,1], y_entries[:,3])   
-
-    I_sub = round(Int, size(y,1)*prob.data_portion)
-    U_sub = round(Int, size(y,2)*prob.data_portion)
-    y     = Matrix(y[1:I_sub, 1:U_sub])
-
-    α  = .5f0
-    λ₀ = 1f0
-    K  = 3
-    I  = size(y,1)
-    U  = size(y,2)
-    NNMFDirExp(α, λ₀, y, K, I, U)
-end
-
-function problem(prob::FashionNNMF)
-    train_x, _ = MLDatasets.FashionMNIST(split=:train)[:]
-    y  = reshape(train_x, (28*28, :))
-
-    α  = .5f0
-    λ₀ = 1f0
-    K  = 3
-    I  = size(y,1)
-    U  = size(y,2)
-    NNMFDirExp(α, λ₀, y, K, I, U)
-end
+#     α  = 1.0f0
+#     λ₀ = 100f0
+#     K  = 5
+#     I  = size(y_sub_quant,1)
+#     U  = size(y_sub_quant,2)
+#     NNMFDirExp(α, λ₀, y_sub_quant, K, I, U)
+# end
 
 function AdvancedVI.VIMeanFieldGaussian(prob::NNMFDirExp)
     d = LogDensityProblems.dimension(prob)
@@ -59,8 +41,8 @@ end
 function StructuredGaussian(prob::NNMFDirExp)
     @unpack K, I, U, likeadj = prob
 
-    d_local  = K - 1
-    d_global = K*I
+    d_local  = K
+    d_global = K*(I-1)
 
     location = zeros(Float32, U*d_local + d_global)
     #diagonal = fill(sqrt(Float32(1.0)), U*d_local + d_global)
