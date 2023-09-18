@@ -29,7 +29,7 @@ function logdensity(model::NNMFGamGam, λ_β, λ_θ)
     # θ ∈ ℝ₊^{K × U}
     # β ∈ ℝ₊^{I × K}
 
-    @unpack α_θ, β_θ, α_β, β_β, y, K, I, U, b_β, b_θ, likeadj = model
+    @unpack α_θ, β_θ, α_β, β_β, y, K, I, U, likeadj = model
 
     b          = ExpBijector()
     β, ℓdetJ_β = forward(b, λ_β)
@@ -48,4 +48,21 @@ function logdensity(model::NNMFGamGam, λ_β, λ_θ)
     ℓp_y  = sum(@. poislogpdf(λ, y))
 
     likeadj*ℓp_y + ℓp_β + ℓp_θ + ℓdetJ_β + ℓdetJ_θ
+end
+
+function LogDensityProblems.capabilities(::Type{<: NNMFGamGam})
+    LogDensityProblems.LogDensityOrder{0}()
+end
+
+function LogDensityProblems.dimension(model::NNMFGamGam)
+    @unpack K, I, U = model
+    K*I + K*U
+end
+
+function LogDensityProblems.logdensity(model::NNMFGamGam, λ_flat)
+    @unpack K, I, U = model
+    @assert length(λ_flat) == K*I + K*U
+    z_β = reshape(first(λ_flat, I*K), (I, K))
+    z_θ = reshape(last( λ_flat, K*U), (K, U))
+    logdensity(model, z_β, z_θ)
 end

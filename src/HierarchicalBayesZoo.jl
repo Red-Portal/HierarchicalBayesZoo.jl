@@ -1,7 +1,13 @@
 
 module HierarchicalBayesZoo
 
-export Gaussian, NNMFDirExp, Volatility, logdensity_ref
+export
+    problem,
+    Gaussian,
+    MovieLensNNMF,
+    BSSNNMF,
+    ForeignExchangeVolatility
+
 export
     ADVICUDA,
     amortize,
@@ -10,6 +16,7 @@ export
     StructuredGaussian
 
 using CSV
+using DelimitedFiles
 using DataFrames
 using DataFramesMeta
 
@@ -23,13 +30,14 @@ using DrWatson
 using FillArrays
 using Flux
 using Functors
-using KernelAbstractions: get_backend, ones, zeros
+using KernelAbstractions
 using LinearAlgebra
 using LogDensityProblems
 using LogExpFunctions
 using NNlib
 using Optimisers
 using Random
+using SignalAnalysis
 using SimpleUnPack: @unpack
 using SparseArrays
 using SpecialFunctions
@@ -48,18 +56,20 @@ include("bbvi/locscale.jl")
 include("bbvi/structured.jl")
 
 subsample_problem(prob, batch) = prob
-
-amortize(q) = q
+amortize(prob, q, batch) = q
  
 include("utils.jl")
 include("bijectors.jl")
 
 include("models/volatility/model.jl")
 include("models/volatility/interfaces.jl")
+
 include("models/nnmfdirexp/model.jl")
 include("models/nnmfdirexp/interfaces.jl")
 
+include("models/nnmfgamgam/model.jl")
+include("models/nnmfgamgam/interfaces.jl")
+
 #include("gaussians.jl")
-include("nnmfgamgam.jl")
 
 end

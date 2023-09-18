@@ -47,27 +47,23 @@ function main()
     use_cuda = true
     dev      = use_cuda ? Flux.gpu : Flux.cpu
 
-    #n_obs      = 100
-    #n_dims     = 2
-    prob      = Volatility() |> dev
+    prob      = problem(BSSNNMF(0.1)) |> dev
 
     # d    = 10
     # L    = 0.1f0*tril(randn(Float32, d, d))
     # prob = Gaussian(randn(Float32, d), PDMats.PDMat(I + L*L'))
 
-    n_samples = 8
-    advi      = ADVICUDA(prob, n_samples, use_cuda)
+    n_samples = 10
+    obj       = ADVICUDA(prob, n_samples, use_cuda)
 
     #batchsize = 10
-    #advidoubly = Subsampling(advi, batchsize, data_indices)
+    #obj       = Subsampling(obj, batchsize, 1:prob.U)
 
-    d     = LogDensityProblems.dimension(prob)
-
-    @info("", d = d)
+    @info("", d = LogDensityProblems.dimension(prob))
 
     q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
-    #q = AdvancedVI.VIMeanFieldGaussian(prob; use_cuda)
-    #q = AdvancedVI.VIFullRankGaussian(prob; use_cuda)
+    #q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
+    #q = AdvancedVI.VIFullRankGaussian(prob) |> dev
 
     #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)
@@ -75,10 +71,10 @@ function main()
     #q     = VIFullRankGaussian(CUDA.zeros(Float32, d), 0.1f0*Eye{Float32}(d) |> Matrix |> Flux.gpu |> LowerTriangular)
     λ, re = Optimisers.destructure(q)
 
-    optimizer = Scheduler(Step(λ=1f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
-        Optimisers.Adam(lr)
-    end
-    #optimizer = Optimisers.Adam(1f-2)
+    #optimizer = Scheduler(Step(λ=.5f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
+    #    Optimisers.Adam(lr)
+    #end
+    optimizer = Optimisers.Adam(1f-3)
 
     callback!(; stat, g, λ, args...) = begin
         if any(@. isnan(λ) | isinf(λ))
@@ -89,8 +85,7 @@ function main()
 
     n_max_iter = 10^4
     q, stats, _ = optimize(
-        #advidoubly,
-        advi,
+        obj,
         q,
         n_max_iter;
         callback! = callback!,

@@ -26,12 +26,14 @@ function forward(b::SimplexBijector, y::AbstractMatrix{F}) where {F <: Real}
     # - One could use `cumprod` with padding but the ChainRule is not
     #   vectorized, so not GPU-friendly.
     ℓzm1_cumprd_part = cumsum(ℓzm1, dims=1)
-    padding          = @ignore_derivatives zeros(get_backend(y), F, 1, N)
+    padding          = @ignore_derivatives KernelAbstractions.zeros(
+        get_backend(y), F, 1, N)
     ℓzm1_cumprd      = vcat(padding, ℓzm1_cumprd_part[1:end-1,:])
     
     ℓx_1toKm1 = ℓz + ℓzm1_cumprd
     x_1toKm1  = exp.(ℓx_1toKm1)
-    x         = vcat(x_1toKm1, 1 .- sum(x_1toKm1, dims=1))
+    x_K       = exp.(log1mexp.(NNlib.logsumexp(ℓx_1toKm1, dims=1)))
+    x         = vcat(x_1toKm1, x_K)
 
     ℓabsdetJ = sum( @. ℓx_1toKm1 + ℓz - y_off )
     x, ℓabsdetJ
@@ -122,7 +124,8 @@ function forward(b::CorrCholBijector, y::AbstractVector{F}) where {F<:Real}
     ℓsqrt1mr²_cumprd = cumsum(ℓsqrt1mr², dims=2)
     sqrt1mr²_cumprd  = exp.(ℓsqrt1mr²_cumprd)
 
-    padding             = @ignore_derivatives ones(get_backend(y), F, size(sqrt1mr²_cumprd,1))
+    padding             = @ignore_derivatives KernelAbstractions.ones(
+        get_backend(y), F, size(sqrt1mr²_cumprd,1))
     sqrt1mr²_cumprd_pad = hcat(padding, sqrt1mr²_cumprd[:,1:end-1])
 
     L_dense = ((r + I).*sqrt1mr²_cumprd_pad)

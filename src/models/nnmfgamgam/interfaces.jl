@@ -1,54 +1,38 @@
 
-struct MovieLensNNMF
+struct BSSNNMF
     data_portion::Float64
 end
 
-struct FashionNNMF
-    data_portion::Float64
+function problem(prob::BSSNNMF)
+    song  = load(datadir("datasets", "songs", "rumble.jld2"))
+    y     = song["signal"]
+    nfft  = 512
+    spec  = tfd(y[:,1], Spectrogram(; nfft, noverlap=nfft÷2, window=hamming))
+    y     = spec.power
+    U_sub = round(Int, prob.data_portion*size(y,2))
+    y_sub = y[:,1:U_sub]
+
+    # Quantization to form Poisson noise
+    y_sub_quant = round.(Int16, y_sub / nfft * 2^15) 
+
+    α_θ = 1.0
+    β_θ = 0.01
+    α_β = 1.0
+    β_β = 0.01
+    K   = 3
+    I   = size(y_sub_quant,1)
+    U   = size(y_sub_quant,2)
+    NNMFGamGam(α_θ, β_θ, α_β, β_β, y_sub_quant, K, I, U)
 end
 
-function problem(prob::MovieLensNNMF)
-    # y[1] is the user
-    # y[2] is the item
-    # y[3] is the rating
-
-    #I = 1682
-    #U = 943
-    y_entries = readdlm(datadir("datasets", "movielens", "u.data"), Int)[:,1:3]
-    y         = sparse(y_entries[:,2], y_entries[:,1], y_entries[:,3])   
-
-    I_sub = round(Int, size(y,1)*prob.data_portion)
-    U_sub = round(Int, size(y,2)*prob.data_portion)
-    y     = Matrix(y[1:I_sub, 1:U_sub])
-
-    α  = .5f0
-    λ₀ = 1f0
-    K  = 3
-    I  = size(y,1)
-    U  = size(y,2)
-    NNMFDirExp(α, λ₀, y, K, I, U)
-end
-
-function problem(prob::FashionNNMF)
-    train_x, _ = MLDatasets.FashionMNIST(split=:train)[:]
-    y  = reshape(train_x, (28*28, :))
-
-    α  = .5f0
-    λ₀ = 1f0
-    K  = 3
-    I  = size(y,1)
-    U  = size(y,2)
-    NNMFDirExp(α, λ₀, y, K, I, U)
-end
-
-function AdvancedVI.VIMeanFieldGaussian(prob::NNMFDirExp)
+function AdvancedVI.VIMeanFieldGaussian(prob::NNMFGamGam)
     d = LogDensityProblems.dimension(prob)
     m = zeros(Float32, d)
     σ = fill(sqrt(Float32(1.0)), d)
     AdvancedVI.VIMeanFieldGaussian(m, Diagonal(σ))
 end
 
-function AdvancedVI.VIFullRankGaussian(prob::NNMFDirExp)
+function AdvancedVI.VIFullRankGaussian(prob::NNMFGamGam)
     d = LogDensityProblems.dimension(prob)
     m = zeros(Float32, d)
     σ = fill(sqrt(Float32(1.0)), d)
@@ -56,17 +40,17 @@ function AdvancedVI.VIFullRankGaussian(prob::NNMFDirExp)
     AdvancedVI.VIFullRankGaussian(m, LowerTriangular(C))
 end
 
-function StructuredGaussian(prob::NNMFDirExp)
+function StructuredGaussian(prob::NNMFGamGam)
     @unpack K, I, U, likeadj = prob
 
-    d_local  = K - 1
+    d_local  = K
     d_global = K*I
 
     location = zeros(Float32, U*d_local + d_global)
     #diagonal = fill(sqrt(Float32(1.0)), U*d_local + d_global)
     diagonal = vcat(
-        fill(convert(Float32, sqrt(.1)), d_global),
-        fill(convert(Float32, 1.0), U*d_local)
+        fill(convert(Float32, sqrt(1.0)), d_global),
+        fill(convert(Float32, sqrt(0.1)), U*d_local)
     )
 
     C_idx = []

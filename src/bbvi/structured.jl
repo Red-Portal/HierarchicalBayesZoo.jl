@@ -15,7 +15,7 @@ struct StructuredLocationScale{
     # the diagonal of the matrix
     scale_vals::ScaleVals
 
-    batch_idx::Idx
+    amortize_idx::Idx
 end
 
 @functor StructuredLocationScale
@@ -25,11 +25,11 @@ struct RestructStructuredLocScale{Q <: StructuredLocationScale}
 end
 
 function update(q_base::StructuredLocationScale, flat::AbstractVector)
-    @unpack location, scale_rows, scale_cols, batch_idx = q_base
+    @unpack location, scale_rows, scale_cols, amortize_idx = q_base
     location′   = flat[1:length(location)]
     scale_vals′ = flat[length(location)+1:end]
     StructuredLocationScale(
-        location′, scale_rows, scale_cols, scale_vals′, batch_idx)
+        location′, scale_rows, scale_cols, scale_vals′, amortize_idx)
 end
 
 function (re::RestructStructuredLocScale)(flat::AbstractVector)
@@ -73,14 +73,14 @@ function StructuredLocationScale(
     scale_rows = vcat(1:d,      offdiag_row)
     scale_cols = vcat(1:d,      offdiag_col)
     scale_vals = vcat(diagonal, offdiag_val)
-    batch_idx  = collect(1:d)
+    amortize_idx  = collect(1:d)
 
     StructuredLocationScale(
         location,
         scale_rows,
         scale_cols,
         scale_vals,
-        batch_idx
+        amortize_idx
     )
 end
 
@@ -112,10 +112,6 @@ function bordered_diagonal_block_indices(
     row_idx = vcat(row_diagblock_idx, row_border_idx)
     col_idx = vcat(col_diagblock_idx, col_border_idx)
     row_idx, col_idx
-end
-
-function amortize(q::StructuredLocationScale, batch::AbstractVector{<:Integer})
-    @set q.batch_idx = batch
 end
 
 _sparsity_preserving_mul(A::AbstractSparseMatrix, x::AbstractArray) = A*x
@@ -169,22 +165,27 @@ end
     end
 end
 
+function amortize(prob, q::StructuredLocationScale, batch)
+    @set q.amortize_idx = convert(typeof(q.amortize_idx), amortize_indices(prob, batch))
+end
+
 function Distributions.rand(
     rng      ::Random.AbstractRNG,
     q        ::StructuredLocationScale,
     n_samples::Integer
 )
-    @unpack location, scale_rows, scale_cols, scale_vals, batch_idx = q
+    @unpack location, scale_rows, scale_cols, scale_vals, amortize_idx = q
 
     perm_idx          = sortperm(scale_cols)
     scale_rows_sorted = scale_rows[perm_idx]
     scale_cols_sorted = scale_cols[perm_idx]
     scale_vals_sorted = scale_vals[perm_idx]
 
-    B     = length(batch_idx)
+    B     = length(amortize_idx)
     d     = length(location)
     scale = sparse(scale_rows_sorted, scale_cols_sorted, scale_vals_sorted, B, d)
-    u     = randn(rng, eltype(location), d, n_samples)
+
+    u = randn(rng, eltype(location), d, n_samples)
 
     sparsity_preserving_mul(scale, u, scale_rows_sorted, scale_cols_sorted) .+ location
 end

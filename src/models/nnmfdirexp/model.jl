@@ -1,10 +1,10 @@
 
 struct NNMFDirExp{F       <: Real,
-                  IntMat  <: AbstractMatrix{<:Integer},
+                  Mat     <: AbstractMatrix,
                   RealVec <: AbstractVector{F}}
     α       ::F
     λ₀      ::F
-    y       ::IntMat
+    y       ::Mat
     K       ::Int
     I       ::Int
     U       ::Int
@@ -14,8 +14,8 @@ struct NNMFDirExp{F       <: Real,
 end
 
 function NNMFDirExp(
-    α::F, λ₀::F, y::IntMat, K::Int, I::Int, U::Int, likeadj = one(F)
-) where {F <: Real, IntMat <: AbstractMatrix{<:Integer}}
+    α::F, λ₀::F, y::Mat, K::Int, I::Int, U::Int, likeadj = one(F)
+) where {F <: Real, Mat <: AbstractMatrix}
     b_β = ExpBijector()
     b_θ = SimplexBijector(F, K)
     NNMFDirExp(α, λ₀, y, K, I, U, b_β, b_θ, likeadj)
@@ -34,20 +34,22 @@ function logdensity(model::NNMFDirExp, z_β, z_θ)
     @assert size(z_β) == (I, K)
     @assert size(z_θ) == ((K-1), U)
 
+    ϵ = eps(eltype(z_θ))
+
     β, ℓdetJ_β = forward(b_β, z_β)
-    θ, ℓdetJ_θ = forward(b_θ, z_θ)
+    θ, ℓdetJ_θ = forward(b_θ, @. clamp(z_θ, -5, 5))
+    #θ, ℓdetJ_θ = forward(b_θ, z_θ)
 
     ℓp_β = sum(βᵢ -> logpdf(Exponential(λ₀), βᵢ), β)
 
     ℓBα  = sum(loggamma, α) - loggamma(K*α)
-    ℓp_θ = sum(@. (α - 1)*log(θ)) - U*ℓBα
+    ℓp_θ = sum(@. (α - 1)*log(θ + ϵ)) - U*ℓBα
 
     λ    = β*θ
     # `mapreduce` would be more efficient but it currently doesn't work
     # with the CUDA+Zygote combination of doom.
     # See https://github.com/FluxML/Zygote.jl/issues/704
     ℓp_y  = sum(@. poislogpdf(λ, y))
-
     likeadj*ℓp_y + ℓp_β + ℓp_θ + ℓdetJ_β + ℓdetJ_θ
 end
 

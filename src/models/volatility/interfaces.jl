@@ -1,5 +1,9 @@
 
-function Volatility()
+struct ForeignExchangeVolatility
+    data_portion::Float64
+end
+
+function problem(prob::ForeignExchangeVolatility)
     currencies = [
         "EUR",
         "JPY",
@@ -33,9 +37,11 @@ function Volatility()
     closing            = reshape(Array(df.Close), (:,length(currencies))) |> transpose |> Array
     logreturn          = log.(closing[:,2:end]) - log.(closing[:,1:end-1])
     logreturn_centered = logreturn .- mean(logreturn, dims=2)
+    x_full             = Array{Float32}(logreturn_centered)
    
-    #x_cpu = Array{Float32}(logreturn_centered)
-    x = Array{Float32}(logreturn_centered)[:,end-100:end]
+    n_total = size(x_full,2)
+    n       = ceil(Int, clamp(prob.data_portion, 0., 1.)*n_total)
+    x       = x_full[:,end-n:end]
 
     d = size(x, 1)
     n = size(x, 2)
@@ -92,9 +98,7 @@ function StructuredGaussian(prob::Volatility)
     )
 end
 
-function AdvancedVI.VIFullRankGaussian(
-    prob::Volatility; use_cuda=false
-)
+function AdvancedVI.VIFullRankGaussian(prob::Volatility)
     x = prob.x
     d = size(x, 1)
     n = size(x, 2)
@@ -108,16 +112,10 @@ function AdvancedVI.VIFullRankGaussian(
         fill(convert(eltype(x), 1.0), n*d_local)
     )
     scale = Diagonal(scale_diag) |> Matrix
-
-    if use_cuda
-        AdvancedVI.VIFullRankGaussian(
-            location |> Flux.gpu, LowerTriangular(scale |> Flux.gpu))
-    else
-        AdvancedVI.VIFullRankGaussian(location, LowerTriangular(scale))
-    end
+    AdvancedVI.VIFullRankGaussian(location, LowerTriangular(scale))
 end
 
-function AdvancedVI.VIMeanFieldGaussian(prob::Volatility; use_cuda=false)
+function AdvancedVI.VIMeanFieldGaussian(prob::Volatility)
     x = prob.x
     d = size(x, 1)
     n = size(x, 2)
@@ -130,11 +128,5 @@ function AdvancedVI.VIMeanFieldGaussian(prob::Volatility; use_cuda=false)
         fill(convert(eltype(x), sqrt(0.1)), d_global),
         fill(convert(eltype(x), 1.0), n*d_local)
     )
-
-    if use_cuda
-        AdvancedVI.VIMeanFieldGaussian(
-            location |> Flux.gpu, Diagonal(diagonal |> Flux.gpu))
-    else
-        AdvancedVI.VIMeanFieldGaussian(location, Diagonal(diagonal))
-    end
+    AdvancedVI.VIMeanFieldGaussian(location, Diagonal(diagonal))
 end

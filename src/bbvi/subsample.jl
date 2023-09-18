@@ -54,7 +54,7 @@ function AdvancedVI.estimate_gradient(
     batch, sub_state′, sub_logstat = update_subsampling(rng, sub, sub_state)
 
     prob_sub          = subsample_problem(objective.prob, batch)
-    q_amort           = amortize(re(λ))
+    q_amort           = amortize(objective.prob, re(λ), batch)
     obj_sub           = @set objective.prob = prob_sub
     λ_amort, re_amort = Optimisers.destructure(q_amort)
 
