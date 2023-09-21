@@ -50,22 +50,29 @@ function StructuredGaussian(prob::NNMFGamGam)
     #diagonal = fill(sqrt(Float32(1.0)), U*d_local + d_global)
     diagonal = vcat(
         fill(convert(Float32, sqrt(1.0)), d_global),
-        fill(convert(Float32, sqrt(0.1)), U*d_local)
+        fill(convert(Float32, sqrt(1.0)), U*d_local)
     )
 
     C_idx = []
 
     # global variables (dense block)
     block_idx  = 0
-    # for _ = 1:I
-    #     push!(C_idx, diagonal_block_indices(block_idx, K))
-    #     block_idx += K
-    # end
+    #for _ = 1:I
+    #    push!(C_idx, diagonal_block_indices(block_idx, K))
+    #    block_idx += K
+    #end
+    block_idx += d_global
 
     # local variables (bordered block-diagonal)
     for _ = 1:U
-        push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d_local))
-        block_idx += d_local
+        #push!(C_idx, bordered_diagonal_block_indices(block_idx, 1:d_global, d_local))
+        #block_idx += d_local
+
+        for k = 1:K
+            #Iₖ_idx = I*(k-1)+1:I*k
+            push!(C_idx, bordered_diagonal_block_indices(block_idx, 1:100, 1))
+            block_idx += 1
+        end
     end
 
     offdiag_row = vcat([row_idxs for (row_idxs, col_idxs) ∈ C_idx]...)

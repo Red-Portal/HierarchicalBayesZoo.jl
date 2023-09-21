@@ -47,7 +47,9 @@ function main()
     use_cuda = true
     dev      = use_cuda ? Flux.gpu : Flux.cpu
 
-    prob      = problem(BSSNNMF(0.1)) |> dev
+    prob      = problem(CritLangIRT(0.003)) |> dev
+    #prob      = problem(BSSNNMF(0.1)) |> dev
+    #prob      = problem(ForeignExchangeVolatility(0.1)) |> dev
 
     # d    = 10
     # L    = 0.1f0*tril(randn(Float32, d, d))
@@ -62,8 +64,8 @@ function main()
     @info("", d = LogDensityProblems.dimension(prob))
 
     #q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
-    q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
-    #q = AdvancedVI.VIFullRankGaussian(prob) |> dev
+    #q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
+    q = AdvancedVI.VIFullRankGaussian(prob) |> dev
 
     #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)
@@ -71,10 +73,10 @@ function main()
     #q     = VIFullRankGaussian(CUDA.zeros(Float32, d), 0.1f0*Eye{Float32}(d) |> Matrix |> Flux.gpu |> LowerTriangular)
     λ, re = Optimisers.destructure(q)
 
-    #optimizer = Scheduler(Step(λ=.5f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
-    #    Optimisers.Adam(lr)
-    #end
-    optimizer = Optimisers.Adam(1f-2)
+    optimizer = Scheduler(Step(λ=1f-2, γ=0.5f0, step_sizes=3*10^3)) do lr
+        Optimisers.Adam(lr)
+    end
+    #optimizer = Optimisers.Adam(1f-2)
 
     callback!(; stat, g, λ, args...) = begin
         if any(@. isnan(λ) | isinf(λ))

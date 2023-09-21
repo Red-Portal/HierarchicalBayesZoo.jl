@@ -3,9 +3,10 @@ module HierarchicalBayesZoo
 
 export
     problem,
-    Gaussian,
-    MovieLensNNMF,
+    #Gaussian,
+    #MovieLensNNMF,
     BSSNNMF,
+    CritLangIRT,
     ForeignExchangeVolatility
 
 export
@@ -69,6 +70,9 @@ include("models/nnmfdirexp/interfaces.jl")
 
 include("models/nnmfgamgam/model.jl")
 include("models/nnmfgamgam/interfaces.jl")
+
+include("models/irt/model.jl")
+include("models/irt/interfaces.jl")
 
 #include("gaussians.jl")
 

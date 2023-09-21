@@ -81,7 +81,7 @@ function StructuredGaussian(prob::Volatility)
     # local variables (bordered block-diagonal)
     # t = 1, ... n
     for _ = 1:n
-        push!(C_idx, bordered_diagonal_block_indices(block_idx, d_global, d))
+        push!(C_idx, bordered_diagonal_block_indices(block_idx, 1:d_global, d))
         block_idx += d
     end
 

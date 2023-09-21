@@ -26,7 +26,7 @@ end
 
 @functor VolatilityParam
 
-function LogDensityProblems.capabilities(::Type{<: Volatility})
+function LogDensityProblems.capabilities(::Type{<:Volatility})
     LogDensityProblems.LogDensityOrder{0}()
 end
 
