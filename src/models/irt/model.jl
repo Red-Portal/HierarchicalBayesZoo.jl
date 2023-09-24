@@ -39,12 +39,6 @@ end
 function logdensity(model::ItemResponse, param::ItemResponseParam{F,V}) where {F<:Real,V}
     @unpack J, K, N, student, question, correct = model
     @unpack μ_β, η_σ_β, η_σ_γ, α, β, η_γ = param
-
-    # μ_β   = param.μ_β
-    # η_σ_β = param.η_σ_β
-    # η_σ_γ = param.η_σ_γ
-    # α     = param.α
-    # β     = param.β
    
     @assert length(α)   == J
     @assert length(β)   == K
@@ -59,9 +53,12 @@ function logdensity(model::ItemResponse, param::ItemResponseParam{F,V}) where {F
     σ_γ, logabsJ_σ_γ = with_logabsdet_jacobian(b⁻¹_sca, η_σ_γ′)
     γ,   logabsJ_γ   = forward(b⁻¹_vec, η_γ)
 
-    p_μ_β = logpdf(Cauchy{F}(0f0, 5f0), μ_β′)
-    p_σ_β = logpdf(truncated(Cauchy{F}(0f0, 5f0), 0, Inf), σ_β)
-    p_σ_γ = logpdf(truncated(Cauchy{F}(0f0, 5f0), 0, Inf), σ_γ)
+    #p_μ_β = logpdf(Cauchy{F}(0f0, 5f0), μ_β′)
+    #p_σ_β = logpdf(truncated(Cauchy{F}(0f0, 5f0), 0, Inf), σ_β)
+    #p_σ_γ = logpdf(truncated(Cauchy{F}(0f0, 5f0), 0, Inf), σ_γ)
+    p_μ_β = logpdf(TDist{F}(4f0), μ_β′)
+    p_σ_β = logpdf(truncated(TDist{F}(4f0), 0, Inf), σ_β)
+    p_σ_γ = logpdf(truncated(TDist{F}(4f0), 0, Inf), σ_γ)
 
     p_α   = sum(αᵢ -> normlogpdf(αᵢ),         α)
     p_β   = sum(βᵢ -> normlogpdf(0, σ_β, βᵢ), β)

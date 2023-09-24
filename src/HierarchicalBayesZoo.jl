@@ -7,6 +7,7 @@ export
     #MovieLensNNMF,
     BSSNNMF,
     CritLangIRT,
+    GermanHealthRobustPoisson,
     ForeignExchangeVolatility
 
 export
@@ -20,6 +21,7 @@ using CSV
 using DelimitedFiles
 using DataFrames
 using DataFramesMeta
+using RDatasets
 
 using Accessors
 using Bijectors
@@ -73,6 +75,9 @@ include("models/nnmfgamgam/interfaces.jl")
 
 include("models/irt/model.jl")
 include("models/irt/interfaces.jl")
+
+include("models/rpoisson/model.jl")
+include("models/rpoisson/interfaces.jl")
 
 #include("gaussians.jl")
 

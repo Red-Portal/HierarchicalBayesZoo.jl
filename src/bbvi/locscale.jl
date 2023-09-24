@@ -51,22 +51,24 @@ function Distributions.rand(
 end
 
 function Distributions.rand(
-    rng      ::CUDA.RNG,
+    rng      ::Union{CUDA.RNG, CUDA.CURAND.RNG},
     q_x      ::VILocationScale{L, <:Diagonal, D},
     n_samples::Int
 ) where {L, D}
     @unpack location, scale = q_x
-    u = randn(rng, size(location, 1), n_samples)
+    d = size(location, 1)
+    u = randn(rng, d, n_samples)
     scale_diag = diag(scale)
     (scale_diag.*u) .+ location
 end
 
 function Distributions.rand(
-    rng      ::CUDA.RNG,
+    rng      ::Union{CUDA.RNG, CUDA.CURAND.RNG},
     q_x      ::VILocationScale{L, <:AbstractTriangular, D},
     n_samples::Int
 ) where {L, D}
     @unpack location, scale = q_x
-    u = randn(rng, size(location, 1), n_samples)
+    d = size(location, 1)
+    u = randn(rng, d, n_samples)
     scale*u .+ location
 end

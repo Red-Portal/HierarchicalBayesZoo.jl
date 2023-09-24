@@ -167,13 +167,22 @@ sparsity_preserving_mul(
     end
 end
 
-@adjoint function sparse(colptr, rowval, nzval, m, n)
-    # rows, cols, vals are assumed to be sorted with the column index
-    # A is assumed to be in the CSC format
+# function _sparse_diffable(colptr, rowval, nzval, m, n)
+#     CUDA.CUSPARSE.CuSparseMatrixCSC{eltype(nzval), eltype(colptr)}(
+#         colptr, rowval, nzval, (m, n)
+#     )
+# end
+
+# function sparse_diffable(colptr, rowval, nzval, m, n)
+#     _sparse_diffable(colptr, rowval, nzval, m, n)
+# end
+
+@adjoint function CUDA.CUSPARSE.CuSparseMatrixCSC(colptr, rowval, nzval, dims)
     A = CUDA.CUSPARSE.CuSparseMatrixCSC{eltype(nzval), eltype(colptr)}(
-        colptr, rowval, nzval, (m, n))
+        colptr, rowval, nzval, dims
+    )
     A, Δ -> begin
-        (nothing, nothing, nonzeros(Δ), nothing, nothing)
+        (nothing, nothing, nonzeros(Δ), nothing)
     end
 end
 
@@ -188,11 +197,14 @@ function Distributions.rand(
 )
     @unpack location, colptr, colval, rowval, nzval, amortize_idx = q
 
-    #B     = length(amortize_idx)
     d     = length(location)
-    scale = sparse(colptr, rowval, nzval, d, d)
+    scale = CUDA.CUSPARSE.CuSparseMatrixCSC(colptr, rowval, nzval, (d, d))
 
     u = randn(rng, eltype(location), d, n_samples)
+
+    # Code for Randomized Quasi Monte Carlo
+    #u′ = randn(rng, eltype(location), nextpow(2, d), n_samples)
+    #u = u′[1:d,:]
 
     sparsity_preserving_mul(scale, u, rowval, colval) .+ location
 end

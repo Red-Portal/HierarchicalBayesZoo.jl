@@ -19,7 +19,7 @@ end
 
 function AdvancedVI.init(rng::Random.AbstractRNG, advi::ADVICUDA, λ, re)
     if advi.use_cuda
-        seed = rand(rng, UInt32)
+        seed = rand(rng, UInt64)
         CUDA.RNG(seed)
     else
         rng
