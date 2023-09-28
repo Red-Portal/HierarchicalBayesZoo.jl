@@ -80,6 +80,7 @@ include("models/irt/interfaces.jl")
 include("models/rpoisson/model.jl")
 include("models/rpoisson/interfaces.jl")
 
-#include("gaussians.jl")
+#include("models/gaussian/model.jl")
+#include("models/gaussian/interfaces.jl")
 
 end
