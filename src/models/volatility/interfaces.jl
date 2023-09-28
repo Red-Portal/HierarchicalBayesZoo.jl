@@ -3,7 +3,7 @@ struct ForeignExchangeVolatility
     data_portion::Float64
 end
 
-function problem(prob::ForeignExchangeVolatility)
+function problem(::Random.AbstractRNG, prob::ForeignExchangeVolatility)
     currencies = [
         "EUR",
         "JPY",

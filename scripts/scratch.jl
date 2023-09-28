@@ -51,10 +51,9 @@ function main()
     use_cuda = true
     dev      = use_cuda ? Flux.gpu : Flux.cpu
 
-    #prob = problem(GermanHealthRobustPoisson(1.0)) |> dev
-    prob = problem(rng, CritLangIRT(0.003)) |> dev
-    #prob = problem(BSSNNMF(0.1)) |> dev
-    #prob = problem(ForeignExchangeVolatility(0.1)) |> dev
+    prob = problem(rng, GermanHealthRobustPoisson(0.1)) |> dev
+    #prob = problem(rng, CritLangIRT(0.003)) |> dev
+    #prob = problem(rng, ForeignExchangeVolatility(0.1)) |> dev
 
     # d    = 10
     # L    = 0.1f0*tril(randn(Float32, d, d))
@@ -69,9 +68,9 @@ function main()
 
     @info("", d = LogDensityProblems.dimension(prob))
 
-    q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
+    #q = HierarchicalBayesZoo.StructuredGaussian(prob) |> dev
     #q = AdvancedVI.VIMeanFieldGaussian(prob) |> dev
-    #q = AdvancedVI.VIFullRankGaussian(prob) |> dev
+    q = AdvancedVI.VIFullRankGaussian(prob) |> dev
 
     #q     = VIMeanFieldGaussian(zeros(Float32, d), Diagonal(.1f0*ones(Float32, d)))
     #q     = VIFullRankGaussian(zeros(Float32, d), Eye{Float32}(d) |> Matrix |> LowerTriangular)

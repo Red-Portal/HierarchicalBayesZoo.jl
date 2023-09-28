@@ -3,17 +3,18 @@ struct GermanHealthRobustPoisson
     data_portion::Float64
 end
 
-function problem(prob::GermanHealthRobustPoisson)
+function problem(::Random.AbstractRNG, prob::GermanHealthRobustPoisson)
     data = RDatasets.dataset("COUNT", "rwm5yr")   
 
     y = data[:,"DocVis"]
     X = data[:, [
         "Age",
+        "Educ",
+        "HHNInc",
         "OutWork",
         "Female",
         "Married",
         "Kids",
-        "Educ",
         "Self",
         "EdLevel1",
         "EdLevel2",
@@ -28,8 +29,8 @@ function problem(prob::GermanHealthRobustPoisson)
     y        = Vector{Float32}(y[sub_idx])
     X        = Matrix{Float32}(X[sub_idx,:])
 
-    X[:,[1,6]] .-= mean(X[:,[1,6]])
-    X[:,[1,6]]  /= std( X[:,[1,6]])
+    X[:,[1,2,3]] .-= mean(X[:,[1,2,3]])
+    X[:,[1,2,3]]  /= std( X[:,[1,2,3]])
 
     n = size(X,1)
     p = size(X,2)

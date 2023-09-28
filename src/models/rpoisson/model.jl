@@ -60,9 +60,9 @@ function logdensity(model::RobustPoisson, param::RobustPoissonParam{F,V}) where 
     σ_β, logabsJ_σ_β = with_logabsdet_jacobian(b⁻¹, η_σ_β′)
     σ_ϵ, logabsJ_σ_ϵ = with_logabsdet_jacobian(b⁻¹, η_σ_e′)
 
-    p_σ_α = logpdf(truncated(TDist{F}(4f0), 0, Inf), σ_α)
-    p_σ_β = logpdf(truncated(TDist{F}(4f0), 0, Inf), σ_β)
-    p_σ_e = logpdf(truncated(TDist{F}(4f0), 0, Inf), σ_ϵ)
+    p_σ_α = logpdf(truncated(Normal{F}(0f0, 1f0), 0, Inf), σ_α)
+    p_σ_β = logpdf(truncated(Normal{F}(0f0, 1f0), 0, Inf), σ_β)
+    p_σ_e = logpdf(truncated(Normal{F}(0f0, 1f0), 0, Inf), σ_ϵ)
 
     p_α = normlogpdf(0, σ_α, α′)
     p_β = sum(βᵢ -> normlogpdf(0, σ_β, βᵢ), β)

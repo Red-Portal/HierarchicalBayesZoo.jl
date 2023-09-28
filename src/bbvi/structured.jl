@@ -1,6 +1,4 @@
 
-using Zygote
-
 struct StructuredLocationScale{
     Loc     <: AbstractVector,
     IntVec  <: AbstractVector{<:Integer},

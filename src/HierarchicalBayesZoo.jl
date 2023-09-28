@@ -46,8 +46,9 @@ using SparseArrays
 using SpecialFunctions
 using StatsBase
 using StatsFuns
-using Zygote: @adjoint
 
+using Zygote
+using Zygote: @adjoint
 using DiffResults
 using ADTypes
 using AdvancedVI
