@@ -79,7 +79,7 @@ function export_losscurve(df, io=nothing;
                (familyname = :meanfield,)]
     for logstepsize in logstepsize_range
         for config in configs
-            @unpack familyname = config
+            SimpleUnPack.@unpack familyname = config
             x, y, y_p_abs, y_m_abs = plot_losscurve(
                 df, logstepsize;
                 taskname    = taskname,
@@ -100,9 +100,9 @@ function export_losscurve(df = load_data(datadir("experiment")))
         (taskname=:poisson,    proportion=0.1,  logstepsize_range=[-4, -3.5, -3]), 
         (taskname=:volatility, proportion=0.1,  logstepsize_range=[-4, -3.5, -3]), 
 
-        #(taskname=:irt,        proportion=0.01, logstepsize_range=[-4, -3.5, -3]), 
-        #(taskname=:poisson,    proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
-        #(taskname=:volatility, proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:irt,        proportion=0.01, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:poisson,    proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:volatility, proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
     ]
 
     @showprogress for config in configs
