@@ -106,8 +106,12 @@ function export_losscurves(df = load_data(datadir("experiment")))
         (taskname=:volatility, proportion=0.1,  logstepsize_range=[-4, -3.5, -3]), 
 
         (taskname=:irt,        proportion=0.01, logstepsize_range=[-4, -3.5, -3]), 
-        (taskname=:poisson,    proportion=0.2,  logstepsize_range=[-4, -3.5, -3]), 
-        (taskname=:volatility, proportion=0.2,  logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:poisson,    proportion=0.2, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:volatility, proportion=0.2, logstepsize_range=[-4, -3.5, -3]), 
+
+        (taskname=:irt,        proportion=0.05, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:poisson,    proportion=1.0, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:volatility, proportion=1.0, logstepsize_range=[-4, -3.5, -3]), 
     ]
 
     @showprogress for config in configs

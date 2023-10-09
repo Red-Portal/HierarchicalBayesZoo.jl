@@ -82,28 +82,7 @@ function run(config, key)
     DataFrame(t = iter, elbo = elbo)
 end
 
-function main()
-    n_trials = 1
-
-    tasks     = [
-        (taskname = :irt,        proportion = 0.005),
-        (taskname = :poisson,    proportion = 0.1),
-        (taskname = :volatility, proportion = 0.1)
-    ]
-
-    families = [
-        (familyname = :structured,),
-        (familyname = :meanfield,),
-        (familyname = :fullrank,),
-    ]
-
-    logstepsizes = [(logstepsize = -3,),]
-    configs      = [(maxiter = 5*10^4, n_samples = 8),]
-
-    configs = Iterators.product(tasks, families, logstepsizes, configs) |> collect
-    configs = reshape(configs, :)
-    configs = map(x -> merge(x...), configs)
-
+function run_configs(configs, n_trials)
     for config ∈ configs
         DrWatson.produce_or_load(datadir("experiment"), config) do _
             dfs = map(1:n_trials) do key
@@ -117,4 +96,59 @@ function main()
             Dict(:data => df, :config => config)
         end
     end
+end
+
+function main()
+    n_trials = 4
+
+    logstepsizes = [(logstepsize = logstepsize,) for logstepsize in range(-4,-3; step=0.5)]
+    configs      = [(maxiter = 5*10^4, n_samples = 8),]
+
+    tasks     = [
+        (taskname = :irt,        proportion = 0.005),
+        (taskname = :poisson,    proportion = 0.1),
+        (taskname = :volatility, proportion = 0.1)
+	]
+
+    families = [
+        (familyname = :structured,),
+        (familyname = :meanfield,),
+        (familyname = :fullrank,),
+    ]
+    configs = Iterators.product(configs, tasks, logstepsizes, families) |> collect
+    configs = reshape(configs, :)
+    configs = map(x -> merge(x...), configs)
+
+    run_configs(configs, n_trials)
+
+    tasks     = [
+        (taskname = :irt,        proportion = 0.01),
+        (taskname = :poisson,    proportion = 0.2),
+        (taskname = :volatility, proportion = 0.2)
+    ]
+    families = [
+        (familyname = :structured,),
+        (familyname = :meanfield,),
+        (familyname = :fullrank,),
+    ]
+    configs = Iterators.product(configs, tasks, logstepsizes, families) |> collect
+    configs = reshape(configs, :)
+    configs = map(x -> merge(x...), configs)
+
+    run_configs(configs, n_trials)
+
+    tasks     = [
+        (taskname = :irt,        proportion = 0.05),
+        (taskname = :poisson,    proportion = 1.),
+        (taskname = :volatility, proportion = .99)
+    ]
+    families = [
+        (familyname = :structured,),
+        (familyname = :meanfield,),
+    ]
+    configs = Iterators.product(configs, tasks, logstepsizes, families) |> collect
+    configs = reshape(configs, :)
+    configs = map(x -> merge(x...), configs)
+
+    run_configs(configs, n_trials)
 end
