@@ -80,29 +80,34 @@ function export_losscurve(df, io=nothing;
     for logstepsize in logstepsize_range
         for config in configs
             SimpleUnPack.@unpack familyname = config
-            x, y, y_p_abs, y_m_abs = plot_losscurve(
-                df, logstepsize;
-                taskname    = taskname,
-                proportion  = proportion,
-                familyname  = familyname)
-            if !isnothing(io)
-                name = "$(string(familyname))_$(string(logstepsize))"
-                write(io, name*"_x", x)
-                write(io, name*"_y", hcat(y, y_p_abs, y_m_abs)' |> Array)
+            try
+                x, y, y_p_abs, y_m_abs = plot_losscurve(
+                    df, logstepsize;
+                    taskname    = taskname,
+                    proportion  = proportion,
+                    familyname  = familyname)
+                if !isnothing(io)
+                    name = "$(string(familyname))_$(string(logstepsize))"
+                    write(io, name*"_x", x)
+                    write(io, name*"_y", hcat(y, y_p_abs, y_m_abs)' |> Array)
+                end
+            catch e
+                @info("", taskname, proportion, familyname, logstepsize)
+                throw(e)
             end
         end
     end
 end
 
-function export_losscurve(df = load_data(datadir("experiment")))
+function export_losscurves(df = load_data(datadir("experiment")))
     configs = [
         (taskname=:irt,        proportion=0.005, logstepsize_range=[-4, -3.5, -3]), 
         (taskname=:poisson,    proportion=0.1,  logstepsize_range=[-4, -3.5, -3]), 
         (taskname=:volatility, proportion=0.1,  logstepsize_range=[-4, -3.5, -3]), 
 
         (taskname=:irt,        proportion=0.01, logstepsize_range=[-4, -3.5, -3]), 
-        (taskname=:poisson,    proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
-        (taskname=:volatility, proportion=0.02, logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:poisson,    proportion=0.2,  logstepsize_range=[-4, -3.5, -3]), 
+        (taskname=:volatility, proportion=0.2,  logstepsize_range=[-4, -3.5, -3]), 
     ]
 
     @showprogress for config in configs
