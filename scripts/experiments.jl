@@ -1,4 +1,3 @@
-
 using DrWatson
 @quickactivate "HierarchicalBayesZoo"
 
@@ -18,7 +17,7 @@ using Random, Random123
 using SimpleUnPack
 using Zygote
 
-function run(config, key)
+function run_config(config, key)
     SimpleUnPack.@unpack taskname, proportion, familyname, logstepsize, maxiter, n_samples = config
 
     seed = (0x38bef07cf9cc549d, 0x49e2430080b3f797)
@@ -39,7 +38,13 @@ function run(config, key)
         ForeignExchangeVolatility(proportion)
     end
 
+    rng  = Philox4x(UInt64, seed, 8)
+    Random123.set_counter!(rng, 1)
     prob = problem(rng, prob) |> dev
+
+    rng  = Philox4x(UInt64, seed, 8)
+    Random123.set_counter!(rng, key)
+
     obj  = ADVICUDA(prob, n_samples, use_cuda) |> dev
 
     q = if familyname == :structured
@@ -75,7 +80,7 @@ function run(config, key)
         rng           = rng,
         adbackend     = ADTypes.AutoZygote(),
         optimizer     = optimizer,
-        show_progress = true,
+	show_progress = myid() == 2,
     )
     iter = [stat.iteration for stat ∈ filter(x -> haskey(x,:elbo_true), stats)]
     elbo = [stat.elbo_true for stat ∈ filter(x -> haskey(x,:elbo_true), stats)]
@@ -83,10 +88,10 @@ function run(config, key)
 end
 
 function run_configs(configs, n_trials)
-    for config ∈ configs
-        DrWatson.produce_or_load(datadir("experiment"), config) do _
-            dfs = map(1:n_trials) do key
-                run(config, key)
+    @showprogress for config ∈ configs
+        DrWatson.produce_or_load(datadir("exp_raw"), config) do _
+            dfs = @showprogress pmap(1:n_trials) do key
+                run_config(config, key)
             end
             df = vcat(dfs...)
             for (k, v) ∈ pairs(config)
@@ -99,9 +104,9 @@ function run_configs(configs, n_trials)
 end
 
 function main()
-    n_trials = 4
+    n_trials = 8
 
-    logstepsizes = [(logstepsize = logstepsize,) for logstepsize in range(-4,-3; step=0.5)]
+    logstepsizes = [(logstepsize = logstepsize,) for logstepsize in range(-4,-2.75; step=0.25)]
     configs      = [(maxiter = 5*10^4, n_samples = 8),]
 
     tasks     = [
