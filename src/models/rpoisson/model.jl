@@ -48,6 +48,18 @@ function logpoislogpdf(ℓλ::T, x::T) where {T <: Real}
     return x >= 0 ? val : oftype(val, -Inf)
 end
 
+function meanloglikelihood(model::RobustPoisson, θ::AbstractVector)
+    param = model.recon_params(θ)
+
+    @unpack X, y  = model
+    @unpack α, β, η_σ_α, η_σ_β, η_σ_ϵ, ϵ = param
+
+    α′ = sum(α)
+
+    logits = X*β .+ α′ + ϵ
+    mean(@. logpoislogpdf(logits, y))
+end
+
 function logdensity(model::RobustPoisson, param::RobustPoissonParam{F,V}) where {F<:Real,V}
     @unpack X, y  = model
     @unpack α, β, η_σ_α, η_σ_β, η_σ_ϵ, ϵ = param

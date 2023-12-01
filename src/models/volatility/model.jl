@@ -30,6 +30,19 @@ function LogDensityProblems.capabilities(::Type{<:Volatility})
     LogDensityProblems.LogDensityOrder{0}()
 end
 
+function meanloglikelihood(model::Volatility, θ::AbstractVector)
+    param = model.recon_params(θ)
+
+    @unpack x, likeadj, b⁻¹_Σ = model
+    @unpack y, μ, η_ϕ, η_τ, η_L_Σ = param
+
+    xₜ = x
+    yₜ = y
+
+    L⁻¹_xₜ_diag = @. exp(-clamp(yₜ, -15, 15)/2)
+    mean(normlogpdf, L⁻¹_xₜ_diag.*xₜ) + mean(log, L⁻¹_xₜ_diag)
+end
+
 function logdensity(model::Volatility, param::VolatilityParam{F,M,V}) where {F,M,V}
     # Multivariate Stochastic Volatility 
     # μ  ~ Cauchy(0, 10)

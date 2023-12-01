@@ -3,6 +3,7 @@ module HierarchicalBayesZoo
 
 export
     problem,
+    meanloglikelihood,
     #Gaussian,
     #MovieLensNNMF,
     BSSNNMF,

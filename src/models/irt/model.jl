@@ -36,6 +36,21 @@ function bernlogitlogpdf(logit::Real, y::Bool)
     y ? -log1pexp(-logit) : -log1pexp(logit)
 end
 
+function meanloglikelihood(model::ItemResponse, θ::AbstractVector)
+    param = model.recon_params(θ)
+
+    @unpack J, K, N, student, question, correct = model
+    @unpack μ_β, η_σ_β, η_σ_γ, α, β, η_γ = param
+
+    b⁻¹_vec = ExpBijector()
+    μ_β′ = sum(μ_β)
+    γ, _ = forward(b⁻¹_vec, η_γ)
+
+    mean(@. bernlogitlogpdf(
+        γ[question]*α[student] - (β[question] + μ_β′), correct
+    ))
+end
+
 function logdensity(model::ItemResponse, param::ItemResponseParam{F,V}) where {F<:Real,V}
     @unpack J, K, N, student, question, correct = model
     @unpack μ_β, η_σ_β, η_σ_γ, α, β, η_γ = param
