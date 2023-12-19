@@ -22,95 +22,115 @@ function load_data(path)
     vcat(dfs...)
 end
 
-function statistics(df, group_key)
+function statistics(df, group_key, statistic = :elbo)
     df = @chain groupby(df, group_key) begin
-        @combine(:elbo_mean   = mean(:elbo),
-                 :elbo_median = median(:elbo),
-		 :elbo_min    = minimum(:elbo),
-		 :elbo_max    = maximum(:elbo),
-		 :elbo_90     = quantile(:elbo, 0.9),
-		 :elbo_10     = quantile(:elbo, 0.1),
-		 )
+        @combine(
+            $"$(statistic)_mean"   = mean($statistic),
+            $"$(statistic)_median" = median($statistic),
+	    $"$(statistic)_min"    = minimum($statistic),
+	    $"$(statistic)_max"    = maximum($statistic),
+	    $"$(statistic)_90"     = quantile($statistic, 0.9),
+	    $"$(statistic)_10"     = quantile($statistic, 0.1),
+	)
     end
 end
 
-function stepsize_slice(df, logstepsize; 
-			taskname,
-                        proportion,
-			familyname)
+function stepsize_slice(
+    df, logstepsize; 
+    taskname,
+    proportion,
+    familyname,
+    statistic = :elbo
+)
     @chain df begin
         @subset(:taskname        .== taskname,
                 :proportion      .== proportion,
                 :familyname      .== familyname,
                 :logstepsize     .== logstepsize,
-                .!ismissing.(:elbo),
-		isfinite.(:elbo))
-        @select(:elbo, :t)
+                .!ismissing.($statistic),
+		isfinite.($statistic))
+        @select($statistic, :t)
     end
 end
 
-function iteration_slice(df, iteration;
-                         taskname,
-			 proportion,
-			 familyname)
+function iteration_slice(
+    df, iteration;
+    taskname,
+    proportion,
+    familyname,
+    statistic = :elbo
+)
     @chain df begin
         @subset(:taskname    .== taskname,
                 :proportion  .== proportion,
                 :familyname  .== familyname,
                 :t           .== iteration,
-                .!ismissing.(:elbo),
-		isfinite.(:elbo))
-	@select(:elbo, :logstepsize)
+                .!ismissing.($statistic),
+		isfinite.($statistic))
+	@select($statistic, :logstepsize)
     end
 end
 
-function plot_losscurve(df, logstepsize; 
-                        taskname,
-                        proportion, 
-                        familyname)
-    df = stepsize_slice(df, logstepsize;
-                        taskname   = taskname,
-                        proportion = proportion,
-                        familyname = familyname)
+function plot_losscurve(
+    df, logstepsize; 
+    taskname,
+    proportion, 
+    familyname,
+    statistic = :elbo
+)
+    df = stepsize_slice(
+        df, logstepsize;
+        taskname   = taskname,
+        proportion = proportion,
+        familyname = familyname,
+        statistic
+    )
 
-    x = df[:,:t]    |> Array{Float64}
-    y = df[:,:elbo] |> Array{Float64}
+    x = df[:,:t]        |> Array{Float64}
+    y = df[:,statistic] |> Array{Float64}
 
-    df_stats = statistics(df, :t)
+    df_stats = statistics(df, :t, statistic)
     x   = df_stats[:,:t]           |> Array{Int}
-    y   = df_stats[:,:elbo_median] |> Array{Float64}
-    y_p = abs.(df_stats[:,:elbo_90] - y)
-    y_m = abs.(df_stats[:,:elbo_10] - y)
+    y   = df_stats[:, Symbol("$(statistic)_median")] |> Array{Float64}
+    y_p = abs.(df_stats[:,Symbol("$(statistic)_90")] - y)
+    y_m = abs.(df_stats[:,Symbol("$(statistic)_10")] - y)
     #display(Plots.plot!(x, y, xscale=:log10, ribbon=(y_m, y_p)))
     x, y, y_p, y_m
 end
 
-function plot_envelope(df, iteration;
-		       taskname,
-		       proportion,
-                       familyname)
+function plot_envelope(
+    df, iteration;
+    taskname,
+    proportion,
+    familyname,
+    statistic = :elbo
+)
     df = iteration_slice(df, iteration;
                          taskname   = taskname,
                          proportion = proportion,
-                         familyname = familyname)
+                         familyname = familyname,
+                         statistic)
 
     x = df[:,:logstepsize] |> Array{Float64}
-    y = df[:,:elbo]        |> Array{Float64}
+    y = df[:,statistic]    |> Array{Float64}
 
-    df_stats = statistics(df, :logstepsize)
+    df_stats = statistics(df, :logstepsize, statistic)
     x   = 10.0.^(df_stats[:,:logstepsize])
-    y   = df_stats[:,:elbo_median]
-    y_p = abs.(df_stats[:,:elbo_90] - y)
-    y_m = abs.(df_stats[:,:elbo_10] - y)
+    y   = df_stats[:,Symbol("$(statistic)_median")]
+    y_p = abs.(df_stats[:,Symbol("$(statistic)_90")] - y)
+    y_m = abs.(df_stats[:,Symbol("$(statistic)_10")] - y)
     #display(Plots.plot!(x, y, xscale=:log10, ylims=(quantile(y, 0.5), Inf), ribbon=(y_m, y_p)))
     x, y, y_p, y_m
 end
 
-function export_envelope(df, io=nothing; 
-		         iteration_range,
-                         taskname, 
-                         families,
-                         proportion)
+function export_envelope(
+    df, io=nothing; 
+    iteration_range,
+    taskname, 
+    families,
+    proportion,
+    statistic = :elbo
+)
     configs = [(familyname = family,) for family in families]
     for iteration in iteration_range
         #display(Plots.plot())
@@ -121,7 +141,9 @@ function export_envelope(df, io=nothing;
                 df, iteration;
                 taskname   = taskname,
                 proportion = proportion,
-                familyname = familyname)
+                familyname = familyname,
+                statistic
+            )
             if !isnothing(io)
                 name = "$(string(familyname))_$(string(iteration))"
                 write(io, name*"_x", x)
@@ -135,11 +157,14 @@ function export_envelope(df, io=nothing;
     end
 end
 
-function export_losscurve(df, io=nothing; 
-		          logstepsize_range,
-                          taskname,
-			  families,
-                          proportion)
+function export_losscurve(
+    df, io=nothing; 
+    logstepsize_range,
+    taskname,
+    families,
+    proportion,
+    statistic = :elbo
+)
     configs = [(familyname = family,) for family in families]
     for logstepsize in logstepsize_range
         for config in configs
@@ -149,7 +174,9 @@ function export_losscurve(df, io=nothing;
                     df, logstepsize;
                     taskname    = taskname,
                     proportion  = proportion,
-                    familyname  = familyname)
+                    familyname  = familyname,
+                    statistic
+                )
                 if !isnothing(io)
                     name = "$(string(familyname))_$(string(logstepsize))"
                     write(io, name*"_x", x)
@@ -163,7 +190,7 @@ function export_losscurve(df, io=nothing;
     end
 end
 
-function export_losscurves(df = load_data(datadir("exp_raw")))
+function export_losscurves(df = load_data(datadir("exp_raw")), statistic = :elbo)
     configs = [
         (taskname=:irt,        proportion=0.005, logstepsize_range=[-4, -3.5, -3],  families=[:structured, :meanfield, :fullrank]), 
         (taskname=:poisson,    proportion=0.1,   logstepsize_range=[-4, -3.5, -3],  families=[:structured, :meanfield, :fullrank]), 
@@ -186,13 +213,14 @@ function export_losscurves(df = load_data(datadir("exp_raw")))
 		logstepsize_range,
                 taskname,
 		families,
-                proportion
+                proportion,
+                statistic
             )
         end
     end
 end
 
-function export_envelopes(df = load_data(datadir("exp_raw")))
+function export_envelopes(df = load_data(datadir("exp_raw")), statistic = :elbo)
     configs = [
 	(taskname=:irt,        proportion=0.005, iteration_range=[10001, 49901], families=[:fullrank, :structured, :meanfield],), 
         (taskname=:poisson,    proportion=0.1,   iteration_range=[10001, 49901], families=[:fullrank, :structured, :meanfield]), 
@@ -210,11 +238,14 @@ function export_envelopes(df = load_data(datadir("exp_raw")))
     @showprogress for config in configs
         SimpleUnPack.@unpack taskname, proportion, families, iteration_range = config
         h5open(datadir("exp_pro", "envelope_"*savename(config)*".h5"), "w") do io
-            export_envelope(df, io; 
-		            iteration_range,
-                            taskname,
-			    families,
-                            proportion)
+            export_envelope(
+                df, io; 
+		iteration_range,
+                taskname,
+		families,
+                proportion,
+                statistic
+            )
         end
     end
 end
