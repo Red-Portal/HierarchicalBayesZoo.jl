@@ -249,3 +249,33 @@ function export_envelopes(df = load_data(datadir("exp_raw")), statistic = :elbo)
         end
     end
 end
+
+function export_envelopes_loglike(df = load_data(datadir("exp_raw")))
+    configs = [
+	(taskname=:irt,        proportion=0.005, iteration_range=[50000], families=[:fullrank, :structured, :meanfield],), 
+        (taskname=:poisson,    proportion=0.1,   iteration_range=[50000], families=[:fullrank, :structured, :meanfield]), 
+        (taskname=:volatility, proportion=0.1,   iteration_range=[50000], families=[:fullrank, :structured, :meanfield]), 
+
+        (taskname=:irt,        proportion=0.01,  iteration_range=[50000], families=[:fullrank, :structured, :meanfield]), 
+        (taskname=:poisson,    proportion=0.2,   iteration_range=[50000], families=[:fullrank, :structured, :meanfield]), 
+        (taskname=:volatility, proportion=0.2,   iteration_range=[50000], families=[:fullrank, :structured, :meanfield]), 
+
+        #(taskname=:irt,        proportion=0.05,  iteration_range=[50000], families=[:structured, :meanfield]), 
+        #(taskname=:poisson,    proportion=1.0,   iteration_range=[50000], families=[:structured, :meanfield]), 
+        #(taskname=:volatility, proportion=0.99,  iteration_range=[50000], families=[:structured, :meanfield]), 
+    ]
+
+    @showprogress for config in configs
+        SimpleUnPack.@unpack taskname, proportion, families, iteration_range = config
+        h5open(datadir("exp_pro", "envelope_loglike_"*savename(config)*".h5"), "w") do io
+            export_envelope(
+                df, io; 
+		iteration_range,
+                taskname,
+		families,
+                proportion,
+                statistic = :loglike
+            )
+        end
+    end
+end
